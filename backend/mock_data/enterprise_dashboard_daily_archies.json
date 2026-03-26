@@ -1,0 +1,38 @@
+{
+  "enterprise_id": "ent_archies_001",
+  "date": "2026-03-26",
+  "timezone": "PST",
+  "kpis": {
+    "total_visitors_mtd": 8741,
+    "total_visitors_mtd_trend_pct": 12.3,
+    "peak_visitor_hours": ["12:00 PM - 2:00 PM", "6:00 PM - 8:00 PM"],
+    "clustered_chart_mode": "1h window",
+    "average_dwell_time": "1h 22m"
+  },
+  "clustered_column_chart": [
+    {
+      "time_slot": "8:00 AM",
+      "male_total": 22,
+      "female_total": 18,
+      "male": { "tourist": 7, "local_resident": 10, "non_local_resident": 5 },
+      "female": { "tourist": 6, "local_resident": 8, "non_local_resident": 4 }
+    },
+    {
+      "time_slot": "9:00 AM",
+      "male_total": 27,
+      "female_total": 24,
+      "male": { "tourist": 9, "local_resident": 12, "non_local_resident": 6 },
+      "female": { "tourist": 8, "local_resident": 10, "non_local_resident": 6 }
+    }
+  ],
+  "visitor_residence_breakdown": {
+    "Foreigner": 24,
+    "Non-Local Resident": 31,
+    "Local Resident": 45
+  },
+  "peak_visit_frequency_by_residence": [
+    { "category": "Local", "value": 428 },
+    { "category": "Non-Local", "value": 301 },
+    { "category": "Foreigner", "value": 233 }
+  ]
+}

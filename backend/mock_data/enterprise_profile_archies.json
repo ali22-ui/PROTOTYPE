@@ -1,0 +1,16 @@
+{
+  "enterprise_id": "ent_archies_001",
+  "company_name": "Archies",
+  "dashboard_title": "Archies Enterprise Dashboard - Tourism Analytics Portal",
+  "logo_url": "https://placehold.co/96x96/png",
+  "linked_lgu_id": "lgu_san_pedro_001",
+  "reporting_window_status": "OPEN",
+  "timezone": "PST",
+  "cameras": [
+    {
+      "camera_id": "cam_main_entrance_01",
+      "name": "Main Entrance - Camera 1",
+      "status": "ACTIVE"
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "report_id": "rpt_ent_archies_001_2026_03",
+  "enterprise_id": "ent_archies_001",
+  "enterprise_name": "Archies",
+  "linked_lgu_id": "lgu_san_pedro_001",
+  "period": {
+    "month": "2026-03",
+    "start": "2026-03-01",
+    "end": "2026-03-31"
+  },
+  "submitted_at": "2026-03-31T23:58:33-08:00",
+  "submitted_by_user_id": "usr_archies_admin_01",
+  "kpis": {
+    "total_visitors_mtd": 8741,
+    "trend_pct": 12.3,
+    "avg_dwell_minutes": 82,
+    "peak_visitor_hours": ["12:00 PM - 2:00 PM", "6:00 PM - 8:00 PM"]
+  },
+  "demographics": {
+    "sex_totals": { "male": 4621, "female": 4120 },
+    "residence_totals": {
+      "foreigner": 2098,
+      "non_local_resident": 2710,
+      "local_resident": 3933
+    },
+    "residence_percentages": {
+      "foreigner_pct": 24,
+      "non_local_resident_pct": 31,
+      "local_resident_pct": 45
+    }
+  },
+  "charts": {
+    "clustered_column_chart_daily_series": [
+      { "date": "2026-03-29", "hourly_buckets": [] },
+      { "date": "2026-03-30", "hourly_buckets": [] },
+      { "date": "2026-03-31", "hourly_buckets": [] }
+    ],
+    "peak_visit_frequency_by_residence": {
+      "local": 428,
+      "non_local": 301,
+      "foreigner": 233
+    }
+  },
+  "audit": {
+    "source": "enterprise-dashboard",
+    "sync_transaction_id": "txn_9c1fa2b8",
+    "reporting_window_status_at_submit": "OPEN"
+  }
+}

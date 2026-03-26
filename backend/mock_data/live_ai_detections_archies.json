@@ -1,0 +1,40 @@
+{
+  "enterprise_id": "ent_archies_001",
+  "camera_id": "cam_main_entrance_01",
+  "packets": [
+    {
+      "packet_id": "pkt_20260326_202900_001024",
+      "timestamp": "2026-03-26T20:29:00-08:00",
+      "detections": [
+        {
+          "track_id": "trk_77881",
+          "classification": {
+            "sex": "female",
+            "residence_type": "tourist"
+          },
+          "bbox": { "x": 215, "y": 130, "w": 74, "h": 168 },
+          "confidence": {
+            "person": 0.99,
+            "sex": 0.92,
+            "residence_type": 0.84
+          },
+          "dwell_seconds": 312
+        },
+        {
+          "track_id": "trk_77882",
+          "classification": {
+            "sex": "male",
+            "residence_type": "local_resident"
+          },
+          "bbox": { "x": 392, "y": 122, "w": 69, "h": 171 },
+          "confidence": {
+            "person": 0.98,
+            "sex": 0.89,
+            "residence_type": 0.81
+          },
+          "dwell_seconds": 147
+        }
+      ]
+    }
+  ]
+}
