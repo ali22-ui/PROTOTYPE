@@ -12,7 +12,7 @@ export default defineConfig({
         manualChunks: {
           'vendor-react': ['react', 'react-dom', 'react-router-dom'],
           'vendor-charts': ['recharts'],
-          'vendor-maps': ['@react-google-maps/api'],
+          'vendor-maps': ['leaflet', 'react-leaflet', 'leaflet.heat'],
           'vendor-icons': ['lucide-react'],
         },
       },

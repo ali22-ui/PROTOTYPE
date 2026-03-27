@@ -36,6 +36,12 @@ const fallbackOverview = {
     { time: '5 PM', value: 61 },
     { time: '6 PM', value: 50 },
   ],
+  recentActivities: [
+    'Fallback mode: backend temporarily unreachable.',
+    'Overview metrics loaded from local defaults.',
+    'Map and charts remain interactive in offline mode.',
+    'Start backend to use live mock API responses.',
+  ],
 };
 
 const fallbackLogs = {

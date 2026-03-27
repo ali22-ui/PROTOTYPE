@@ -52,22 +52,22 @@ export default function LogsView() {
         </div>
 
         <div className="mt-4 grid gap-3 md:grid-cols-3">
-          <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm">
+          <div className="min-h-[84px] rounded-lg bg-slate-50 px-3 py-2 text-sm">
             <p className="text-slate-500">Total Logs</p>
             <p className="text-xl font-semibold text-primary-900">{logs.length}</p>
           </div>
-          <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm">
+          <div className="min-h-[84px] rounded-lg bg-slate-50 px-3 py-2 text-sm">
             <p className="text-slate-500">Warnings</p>
             <p className="text-xl font-semibold text-amber-700">{logs.filter((log) => log.severity === 'Warning').length}</p>
           </div>
-          <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm">
+          <div className="min-h-[84px] rounded-lg bg-slate-50 px-3 py-2 text-sm">
             <p className="text-slate-500">Errors</p>
             <p className="text-xl font-semibold text-rose-700">{logs.filter((log) => log.severity === 'Error').length}</p>
           </div>
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="max-h-[62vh] overflow-auto rounded-xl border border-slate-200 bg-white shadow-sm">
         <table className="min-w-full text-left text-sm">
           <thead className="bg-slate-50 text-slate-600">
             <tr>

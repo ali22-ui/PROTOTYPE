@@ -94,7 +94,7 @@ export default function OverviewView() {
         {metricCards.map((card) => {
           const Icon = card.icon;
           return (
-            <div key={card.title} className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
+            <div key={card.title} className="min-h-[136px] rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
               <div className="flex items-center gap-2">
                 <div className="rounded-full bg-slate-100 p-2">
                   <Icon size={15} className="text-slate-700" />
@@ -138,7 +138,7 @@ export default function OverviewView() {
 
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <h4 className="text-sm font-semibold text-slate-700">Recent Activity</h4>
-            <div className="mt-2 overflow-x-auto">
+            <div className="mt-2 max-h-[270px] overflow-auto">
               <table className="min-w-full text-left text-sm">
                 <thead className="text-slate-500">
                   <tr>
@@ -149,7 +149,7 @@ export default function OverviewView() {
                   </tr>
                 </thead>
                 <tbody>
-                  {overview.recentActivities.map((activity, index) => (
+                  {(overview.recentActivities || []).map((activity, index) => (
                     <tr key={activity} className="border-t border-slate-100">
                       <td className="py-1.5 font-semibold text-primary-900">E-{1023 + index * 17}</td>
                       <td className="py-1.5">{index % 2 === 0 ? 'Visitor' : 'Tourist'}</td>
@@ -168,7 +168,7 @@ export default function OverviewView() {
         </div>
 
         <aside className="space-y-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="min-h-[254px] rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <h4 className="text-sm font-semibold text-slate-700">Peak Hour (9 AM - 6 PM)</h4>
             <div className="mt-2 h-44">
               <ResponsiveContainer width="100%" height="100%">
@@ -183,7 +183,7 @@ export default function OverviewView() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="min-h-[254px] rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <h4 className="text-sm font-semibold text-slate-700">Analytics</h4>
             <div className="mt-2 space-y-2 text-sm text-slate-700">
               {analyticsSummary.map((item) => (
@@ -207,7 +207,7 @@ export default function OverviewView() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="min-h-[190px] rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <h4 className="text-sm font-semibold text-slate-700">Latest Logs</h4>
             <ul className="mt-2 space-y-2 text-xs text-slate-600">
               {logs.slice(0, 3).map((log) => (

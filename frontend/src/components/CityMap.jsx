@@ -1,5 +1,7 @@
-import { GoogleMap, HeatmapLayer, InfoWindow, Marker, Polygon, useJsApiLoader } from '@react-google-maps/api';
-import { useMemo, useState } from 'react';
+import L from 'leaflet';
+import 'leaflet.heat';
+import { useEffect, useMemo, useState } from 'react';
+import { CircleMarker, MapContainer, Marker, Polygon, Popup, TileLayer, useMap } from 'react-leaflet';
 
 const defaultCenter = { lat: 14.3413, lng: 121.0446 };
 const sanPedroBounds = {
@@ -9,20 +11,64 @@ const sanPedroBounds = {
   west: 120.985,
 };
 
-const libraries = ['visualization'];
-
 const mapOptions = {
-  fullscreenControl: false,
-  mapTypeControl: false,
-  streetViewControl: false,
-  gestureHandling: 'greedy',
   minZoom: 12.5,
   maxZoom: 17,
-  restriction: {
-    latLngBounds: sanPedroBounds,
-    strictBounds: true,
-  },
+  maxBounds: [
+    [sanPedroBounds.south, sanPedroBounds.west],
+    [sanPedroBounds.north, sanPedroBounds.east],
+  ],
+  maxBoundsViscosity: 1.0,
 };
+
+function FitToBarangays({ fitToBarangays, barangays }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!fitToBarangays || !barangays.length) return;
+
+    const bounds = L.latLngBounds([]);
+    barangays.forEach((barangay) => {
+      barangay.coordinates.forEach((point) => bounds.extend([point.lat, point.lng]));
+    });
+
+    if (bounds.isValid()) {
+      map.fitBounds(bounds, { padding: [24, 24] });
+    }
+  }, [map, fitToBarangays, barangays]);
+
+  return null;
+}
+
+function BarangayHeatLayer({ heatmap, showHeatmap }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!showHeatmap || !heatmap.length || !L.heatLayer) return;
+
+    const points = heatmap.map((point) => [point.lat, point.lng, point.weight || 1]);
+
+    const layer = L.heatLayer(points, {
+      radius: 34,
+      blur: 26,
+      minOpacity: 0.28,
+      maxZoom: 17,
+      gradient: {
+        0.2: '#3b82f6',
+        0.4: '#2563eb',
+        0.6: '#93c5fd',
+        0.8: '#fbbf24',
+        1.0: '#f59e0b',
+      },
+    }).addTo(map);
+
+    return () => {
+      map.removeLayer(layer);
+    };
+  }, [map, heatmap, showHeatmap]);
+
+  return null;
+}
 
 export default function CityMap({
   barangays = [],
@@ -40,23 +86,7 @@ export default function CityMap({
   showBarangayLabels = false,
   fitToBarangays = false,
 }) {
-  const googleMapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
   const [hoveredBarangay, setHoveredBarangay] = useState(null);
-
-  const { isLoaded, loadError } = useJsApiLoader({
-    id: 'lgu-city-map',
-    googleMapsApiKey,
-    libraries,
-  });
-
-  const heatmapData = useMemo(() => {
-    if (!isLoaded || !window.google || !showHeatmap) return [];
-
-    return heatmap.map((point) => ({
-      location: new window.google.maps.LatLng(point.lat, point.lng),
-      weight: point.weight,
-    }));
-  }, [heatmap, isLoaded, showHeatmap]);
 
   const getPolygonCenter = (barangay) => {
     if (barangay.center) return barangay.center;
@@ -71,87 +101,46 @@ export default function CityMap({
     };
   };
 
-  if (!googleMapsApiKey || googleMapsApiKey.includes('YOUR_GOOGLE_MAPS_API_KEY_HERE')) {
-    return (
-      <div className={`grid place-items-center rounded-xl border border-dashed border-slate-300 bg-white ${className}`}>
-        <div className="max-w-md p-6 text-center text-sm text-slate-600">
-          <p className="mb-2 text-base font-semibold text-slate-800">Google Maps API key required</p>
-          <p>
-            Set <code>VITE_GOOGLE_MAPS_API_KEY</code> in your environment file to render the real San Pedro City
-            map and barangay polygons.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (loadError) {
-    return (
-      <div className={`grid place-items-center rounded-xl border border-red-200 bg-red-50 ${className}`}>
-        <p className="text-sm text-red-600">Failed to load Google Maps. Please verify your API key and internet connection.</p>
-      </div>
-    );
-  }
-
-  if (!isLoaded) {
-    return (
-      <div className={`grid place-items-center rounded-xl border border-slate-200 bg-white ${className}`}>
-        <p className="text-sm text-slate-600">Loading map…</p>
-      </div>
-    );
-  }
-
   const pastelPalette = [
     '#b7d3f2', '#f9d5dc', '#f8eac2', '#d9f3dd', '#e6d3f9', '#ffd9b8', '#d5f0f2', '#f5d2ff',
     '#cfe7ff', '#ffeec0', '#d8f8ea', '#f9d7cd', '#d7d5ff', '#f7f4be', '#eed8ff', '#c6eef7',
   ];
 
-  const boundaryOptions = {
-    ...mapOptions,
-    styles: [
-      { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-      { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-      { featureType: 'administrative', stylers: [{ visibility: 'off' }] },
+  const mapBounds = useMemo(
+    () => [
+      [sanPedroBounds.south, sanPedroBounds.west],
+      [sanPedroBounds.north, sanPedroBounds.east],
     ],
-  };
+    []
+  );
 
-  const activeOptions = boundaryMode ? boundaryOptions : mapOptions;
+  const boundaryClassName = boundaryMode ? 'grayscale-[0.1] contrast-[0.95]' : '';
 
-  const handleMapLoad = (map) => {
-    if (!fitToBarangays || !barangays.length) return;
-    const bounds = new window.google.maps.LatLngBounds();
-    barangays.forEach((barangay) => {
-      barangay.coordinates.forEach((point) => bounds.extend(point));
+  const labelIcon = (name) =>
+    L.divIcon({
+      className: 'barangay-label-marker',
+      html: `<span style="font-size:11px;font-weight:700;color:#111827;text-shadow:0 1px 2px rgba(255,255,255,0.9)">${name.toUpperCase()}</span>`,
+      iconSize: [0, 0],
     });
-    map.fitBounds(bounds, 24);
-  };
 
   return (
-    <GoogleMap
-      zoom={zoom}
-      center={center || defaultCenter}
-      mapContainerClassName={`${className} rounded-xl`}
-      options={activeOptions}
-      onLoad={handleMapLoad}
-    >
-      {showHeatmap && heatmapData.length > 0 && (
-        <HeatmapLayer
-          data={heatmapData}
-          options={{
-            radius: 58,
-            opacity: 0.52,
-            maxIntensity: 10,
-            gradient: [
-              'rgba(30,58,138,0)',
-              'rgba(59,130,246,0.20)',
-              'rgba(37,99,235,0.35)',
-              'rgba(147,197,253,0.48)',
-              'rgba(251,191,36,0.68)',
-              'rgba(245,158,11,0.78)',
-            ],
-          }}
+    <div className={`${className} overflow-hidden rounded-xl ${boundaryClassName}`}>
+      <MapContainer
+        zoom={zoom}
+        center={center || defaultCenter}
+        className="h-full w-full"
+        minZoom={mapOptions.minZoom}
+        maxZoom={mapOptions.maxZoom}
+        maxBounds={mapBounds}
+        maxBoundsViscosity={mapOptions.maxBoundsViscosity}
+      >
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-      )}
+
+        <FitToBarangays fitToBarangays={fitToBarangays} barangays={barangays} />
+        <BarangayHeatLayer heatmap={heatmap} showHeatmap={showHeatmap} />
 
       {showPolygons &&
         barangays.map((barangay, index) => {
@@ -160,20 +149,18 @@ export default function CityMap({
         return (
           <Polygon
             key={barangay.id}
-            paths={barangay.coordinates}
-            onClick={() => onBarangayClick?.(barangay)}
-            onMouseOver={() => setHoveredBarangay(barangay)}
-            onMouseOut={() => setHoveredBarangay(null)}
-            options={{
-              fillColor: boundaryMode
-                ? pastelPalette[index % pastelPalette.length]
-                : isSelected
-                  ? '#1d4ed8'
-                  : '#60a5fa',
+            positions={barangay.coordinates.map((point) => [point.lat, point.lng])}
+            eventHandlers={{
+              click: () => onBarangayClick?.(barangay),
+              mouseover: () => setHoveredBarangay(barangay),
+              mouseout: () => setHoveredBarangay(null),
+            }}
+            pathOptions={{
+              fillColor: boundaryMode ? pastelPalette[index % pastelPalette.length] : isSelected ? '#1d4ed8' : '#60a5fa',
               fillOpacity: boundaryMode ? 0.62 : isSelected ? 0.45 : 0.2,
-              strokeColor: boundaryMode ? '#1f2937' : '#1e3a8a',
-              strokeOpacity: 0.9,
-              strokeWeight: boundaryMode ? 1.8 : isSelected ? 3 : 2,
+              color: boundaryMode ? '#1f2937' : '#1e3a8a',
+              opacity: 0.9,
+              weight: boundaryMode ? 1.8 : isSelected ? 3 : 2,
             }}
           />
         );
@@ -185,20 +172,9 @@ export default function CityMap({
           return (
             <Marker
               key={`label-${barangay.id}`}
-              position={position}
-              label={{
-                text: barangay.name.toUpperCase(),
-                color: '#111827',
-                fontSize: '11px',
-                fontWeight: '700',
-              }}
-              icon={{
-                path: window.google.maps.SymbolPath.CIRCLE,
-                scale: 0,
-                fillOpacity: 0,
-                strokeOpacity: 0,
-              }}
-              clickable={false}
+              position={[position.lat, position.lng]}
+              icon={labelIcon(barangay.name)}
+              interactive={false}
             />
           );
         })}
@@ -207,41 +183,49 @@ export default function CityMap({
         barangays.map((barangay) => {
           const position = getPolygonCenter(barangay);
           return (
-            <Marker
+            <CircleMarker
               key={`marker-${barangay.id}`}
-              position={position}
-              onClick={() => onBarangayClick?.(barangay)}
-              title={barangay.name}
-              icon={{
-                path: window.google.maps.SymbolPath.CIRCLE,
+              center={[position.lat, position.lng]}
+              eventHandlers={{ click: () => onBarangayClick?.(barangay) }}
+              pathOptions={{
                 fillColor: selectedBarangay?.id === barangay.id ? '#f4b400' : '#1e3a8a',
                 fillOpacity: 0.95,
-                strokeColor: '#ffffff',
-                strokeWeight: 1.8,
-                scale: selectedBarangay?.id === barangay.id ? 7 : 5,
+                color: '#ffffff',
+                weight: 1.8,
               }}
-            />
+              radius={selectedBarangay?.id === barangay.id ? 7 : 5}
+            >
+              <Popup>{barangay.name}</Popup>
+            </CircleMarker>
           );
         })}
 
       {enterpriseMarkers.map((marker) => (
-        <Marker
+        <CircleMarker
           key={marker.id}
-          position={{ lat: marker.lat, lng: marker.lng }}
-          title={marker.name}
-          icon={{
-            path: window.google.maps.SymbolPath.CIRCLE,
+          center={[marker.lat, marker.lng]}
+          pathOptions={{
             fillColor: '#f4b400',
             fillOpacity: 0.95,
-            strokeColor: '#0b1f52',
-            strokeWeight: 1.5,
-            scale: 5,
+            color: '#0b1f52',
+            weight: 1.5,
           }}
-        />
+          radius={5}
+        >
+          <Popup>{marker.name}</Popup>
+        </CircleMarker>
       ))}
 
       {hoveredBarangay && (
-        <InfoWindow position={getPolygonCenter(hoveredBarangay)} onCloseClick={() => setHoveredBarangay(null)}>
+        <Popup
+          position={[
+            getPolygonCenter(hoveredBarangay).lat,
+            getPolygonCenter(hoveredBarangay).lng,
+          ]}
+          eventHandlers={{
+            remove: () => setHoveredBarangay(null),
+          }}
+        >
           <div className="min-w-[180px] p-1 text-slate-800">
             <p className="text-sm font-semibold">{hoveredBarangay.name}</p>
             <p className="text-xs text-slate-600">San Pedro City, Laguna 4023</p>
@@ -249,8 +233,9 @@ export default function CityMap({
               {hoveredBarangay.enterpriseCount ?? 0} registered enterprises
             </p>
           </div>
-        </InfoWindow>
+        </Popup>
       )}
-    </GoogleMap>
+      </MapContainer>
+    </div>
   );
 }

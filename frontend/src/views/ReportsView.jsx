@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Area,
   AreaChart,
+  Bar,
+  BarChart,
   CartesianGrid,
   Cell,
   Pie,
@@ -141,10 +143,15 @@ export default function ReportsView() {
   }, [accounts]);
 
   const chartData = useMemo(() => {
-    return accounts.map((item) => ({
-      enterprise: item.company_name,
-      score: item.has_submitted_for_period ? 100 : item.reporting_window_status === 'OPEN' ? 60 : 20,
-    }));
+    const shorten = (name) => (name.length > 26 ? `${name.slice(0, 23)}...` : name);
+    return accounts
+      .map((item) => ({
+        enterprise: shorten(item.company_name),
+        fullName: item.company_name,
+        score: item.has_submitted_for_period ? 100 : item.reporting_window_status === 'OPEN' ? 60 : 20,
+      }))
+      .sort((a, b) => b.score - a.score || a.enterprise.localeCompare(b.enterprise))
+      .slice(0, 12);
   }, [accounts]);
 
   const filteredAccounts = accounts.filter((item) => {
@@ -286,19 +293,34 @@ export default function ReportsView() {
         <SummaryCard label="Waiting Submission" value={submissionSummary.waiting} accent="text-amber-700" />
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[1fr_1.1fr]">
+      <section className="grid items-start gap-4 xl:grid-cols-[1fr_1.1fr]">
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <h4 className="mb-3 text-sm font-semibold">Enterprise Submission Readiness</h4>
-          <div className="h-72">
+          <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData}>
+              <BarChart data={chartData} layout="vertical" margin={{ top: 8, right: 12, left: 10, bottom: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="enterprise" interval={0} angle={-18} textAnchor="end" height={70} tick={{ fontSize: 10 }} />
-                <YAxis domain={[0, 100]} />
+                <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} />
+                <YAxis dataKey="enterprise" type="category" width={150} tick={{ fontSize: 11 }} />
                 <Tooltip contentStyle={{ borderRadius: 12, borderColor: '#cbd5e1' }} />
-                <Area type="monotone" dataKey="score" stroke="#1d4ed8" fill="rgba(29,78,216,.2)" strokeWidth={2.5} />
-              </AreaChart>
+                <Bar dataKey="score" radius={[0, 6, 6, 0]} fill="#1d4ed8" />
+              </BarChart>
             </ResponsiveContainer>
+          </div>
+
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500">Top View</p>
+              <p className="mt-1 text-sm font-semibold text-slate-800">Highest readiness accounts</p>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500">Scale</p>
+              <p className="mt-1 text-sm font-semibold text-slate-800">100 Submitted • 60 Open • 20 Closed</p>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500">Coverage</p>
+              <p className="mt-1 text-sm font-semibold text-slate-800">Showing top {chartData.length} accounts</p>
+            </div>
           </div>
         </div>
 
@@ -317,7 +339,7 @@ export default function ReportsView() {
             </select>
           </div>
 
-          <div className="mt-3 space-y-2 text-sm">
+          <div className="mt-3 max-h-[470px] space-y-2 overflow-y-auto pr-1 text-sm">
             {filteredAccounts.map((account) => (
               <div key={account.enterprise_id} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
                 <div className="flex items-center justify-between gap-2">
@@ -551,7 +573,7 @@ export default function ReportsView() {
 
 function SummaryCard({ label, value, accent = 'text-slate-800' }) {
   return (
-    <article className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
+    <article className="min-h-[112px] rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
       <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
       <p className={`mt-2 text-2xl font-bold ${accent}`}>{value}</p>
     </article>

@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter, HashRouter } from 'react-router-dom';
 import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
+import 'leaflet/dist/leaflet.css';
 import './index.css';
 
 const Router = window.location.hostname.includes('github.io') ? HashRouter : BrowserRouter;

@@ -28,7 +28,7 @@
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        "Set-Location '${workspaceFolder}'; python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000"
+        "Set-Location '${workspaceFolder}\\backend'; & '.\\.venv\\Scripts\\python.exe' -B -m uvicorn main:app --reload --host 127.0.0.1 --port 8000"
       ],
       "isBackground": true,
       "problemMatcher": [],
@@ -57,6 +57,43 @@
         "focus": true
       },
       "group": "build"
+    },
+    {
+      "label": "Frontend: Install Dependencies",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "Set-Location '${workspaceFolder}\\frontend'; npm install"
+      ],
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": true
+      }
+    },
+    {
+      "label": "Frontend: Start (Vite)",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "Set-Location '${workspaceFolder}\\frontend'; npm run dev -- --host 127.0.0.1 --port 5173"
+      ],
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": true
+      }
     }
   ]
 }

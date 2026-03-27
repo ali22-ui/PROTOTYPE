@@ -23,16 +23,18 @@ const navLinks = [
 export default function DashboardLayout({ onLogout }) {
   return (
     <div className="min-h-screen bg-[#edf2f7]">
-      <div className="grid min-h-screen grid-cols-[200px_1fr]">
+      <div className="grid min-h-screen grid-cols-[236px_1fr]">
         <aside className="flex flex-col bg-primary-900 text-white shadow-xl">
-          <div className="border-b border-blue-800 px-4 py-5">
-            <div className="flex items-center gap-2.5">
-              <div className="grid h-9 w-9 place-items-center rounded-xl bg-white/10 ring-1 ring-white/20">
-                <Shield size={18} />
+          <div className="border-b border-blue-800 px-4 py-4.5">
+            <div className="flex items-center gap-3">
+              <div className="relative grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-sky-400 via-blue-500 to-indigo-700 ring-2 ring-white/20 shadow-lg shadow-blue-900/35">
+                <Shield size={18} className="absolute top-2.5 text-white/95" />
+                <span className="mt-3 text-[10px] font-black tracking-wide text-white">LGU</span>
               </div>
               <div>
-                <div className="mb-1 text-[11px] uppercase tracking-wide text-blue-200">San Pedro City</div>
-                <h1 className="text-[34px] font-semibold leading-5">LGU Dashboard</h1>
+                <div className="text-[10px] uppercase tracking-[0.2em] text-blue-200">San Pedro City</div>
+                <h1 className="text-lg font-extrabold leading-tight tracking-[0.05em] text-white">LGU DASHBOARD</h1>
+                <p className="text-[10px] uppercase tracking-[0.14em] text-blue-200/90">Laguna • Command Center</p>
               </div>
             </div>
           </div>
@@ -80,8 +82,8 @@ export default function DashboardLayout({ onLogout }) {
         </aside>
 
         <main className="flex flex-col">
-          <header className="flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4">
-            <h2 className="text-[34px] font-semibold tracking-tight text-slate-800">Dashboard</h2>
+          <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3.5">
+            <h2 className="text-[32px] font-semibold tracking-tight text-slate-800">Dashboard</h2>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
                 <Search size={16} className="text-slate-500" />
@@ -100,7 +102,7 @@ export default function DashboardLayout({ onLogout }) {
             </div>
           </header>
 
-          <div className="flex-1 p-4">
+          <div className="flex-1 p-5">
             <Outlet />
           </div>
         </main>

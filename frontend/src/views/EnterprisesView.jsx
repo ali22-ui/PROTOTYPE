@@ -40,16 +40,16 @@ export default function EnterprisesView() {
   return (
     <div className="space-y-4">
       <div className="grid gap-3 md:grid-cols-4">
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:col-span-2">
+        <div className="min-h-[122px] rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:col-span-2">
           <p className="text-xs uppercase tracking-wide text-slate-500">San Pedro Registry</p>
           <p className="mt-2 text-3xl font-bold text-primary-900">{rows.length}</p>
           <p className="text-sm text-slate-600">Total establishments city-wide</p>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="min-h-[122px] rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs uppercase tracking-wide text-slate-500">Active</p>
           <p className="mt-2 text-2xl font-bold text-emerald-700">{statusStats.active}</p>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="min-h-[122px] rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs uppercase tracking-wide text-slate-500">For Review/Renewal</p>
           <p className="mt-2 text-2xl font-bold text-amber-700">{statusStats.review + statusStats.renewal}</p>
         </div>
@@ -84,7 +84,7 @@ export default function EnterprisesView() {
           </select>
         </div>
 
-        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200">
+        <div className="mt-4 max-h-[62vh] overflow-auto rounded-xl border border-slate-200">
           <table className="min-w-full text-left text-sm">
             <thead className="bg-slate-50 text-slate-600">
               <tr>
