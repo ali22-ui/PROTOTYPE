@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from domain_exceptions import DomainConflictError, DomainForbiddenError, DomainNotFoundError
 
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parents[2]
 BOUNDARY_GEOJSON_PATH = BASE_DIR / "data" / "san_pedro_barangays.geojson"
 
 OVERVIEW = {

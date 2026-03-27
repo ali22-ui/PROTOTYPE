@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from legacy_core import load_geojson_boundaries
+from app.domain.core_runtime import load_geojson_boundaries
 
 
 def load_boundaries(path: Path):
