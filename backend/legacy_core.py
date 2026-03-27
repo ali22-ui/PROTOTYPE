@@ -7,19 +7,11 @@ import re
 import zipfile
 from typing import Dict, Set
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, Response, WebSocket, WebSocketDisconnect
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Response, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
-app = FastAPI(title="LGU Dashboard Mock API", version="1.0.0")
+from domain_exceptions import DomainConflictError, DomainForbiddenError, DomainNotFoundError
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 BASE_DIR = Path(__file__).resolve().parent
 BOUNDARY_GEOJSON_PATH = BASE_DIR / "data" / "san_pedro_barangays.geojson"
@@ -853,7 +845,7 @@ def get_enterprise_profile(enterprise_id: str):
     enterprise_id = resolve_enterprise_id(enterprise_id)
     profile = ENTERPRISE_PROFILE_LOOKUP.get(enterprise_id)
     if not profile:
-        raise HTTPException(status_code=404, detail="Enterprise profile not found")
+        raise DomainNotFoundError("Enterprise profile not found")
     return profile
 
 
@@ -861,7 +853,7 @@ def get_reporting_window(enterprise_id: str):
     enterprise_id = resolve_enterprise_id(enterprise_id)
     window = REPORTING_WINDOWS.get(enterprise_id)
     if not window:
-        raise HTTPException(status_code=404, detail="Enterprise reporting window not found")
+        raise DomainNotFoundError("Enterprise reporting window not found")
     return window
 
 
@@ -869,7 +861,7 @@ def get_enterprise_account(enterprise_id: str):
     enterprise_id = resolve_enterprise_id(enterprise_id)
     enterprise = next((item for item in ENTERPRISE_ACCOUNTS if item["enterprise_id"] == enterprise_id), None)
     if not enterprise:
-        raise HTTPException(status_code=404, detail="Enterprise account not found")
+        raise DomainNotFoundError("Enterprise account not found")
     return enterprise
 
 
@@ -1338,17 +1330,14 @@ def build_default_analytics(enterprise_id: int):
     }
 
 
-@app.get("/api/health")
 def health_check():
     return {"status": "ok"}
 
 
-@app.get("/api/overview")
 def get_overview():
     return OVERVIEW
 
 
-@app.get("/api/barangays")
 def get_barangays():
     enterprise_count = {}
     for enterprise in ENTERPRISES:
@@ -1367,7 +1356,6 @@ def get_barangays():
     return {"barangays": enriched_barangays, "heatmap": HEATMAP_POINTS}
 
 
-@app.get("/api/barangays/geojson")
 def get_barangays_geojson():
     features = []
     for barangay in BARANGAYS:
@@ -1395,7 +1383,6 @@ def get_barangays_geojson():
     }
 
 
-@app.get("/api/barangays/{barangay_name}/enterprises")
 def get_barangay_enterprises(barangay_name: str):
     matches = [
         enterprise
@@ -1405,16 +1392,14 @@ def get_barangay_enterprises(barangay_name: str):
     return {"barangay": barangay_name, "enterprises": matches}
 
 
-@app.get("/api/enterprises")
 def get_enterprises():
     return {"enterprises": ENTERPRISES}
 
 
-@app.get("/api/enterprises/{enterprise_id}/analytics")
 def get_enterprise_analytics(enterprise_id: int):
     enterprise = next((e for e in ENTERPRISES if e["id"] == enterprise_id), None)
     if not enterprise:
-        raise HTTPException(status_code=404, detail="Enterprise not found")
+        raise DomainNotFoundError("Enterprise not found")
 
     analytics = ENTERPRISE_ANALYTICS.get(enterprise_id) or build_default_analytics(enterprise_id)
 
@@ -1424,17 +1409,14 @@ def get_enterprise_analytics(enterprise_id: int):
     }
 
 
-@app.get("/api/reports")
 def get_reports():
     return REPORTS
 
 
-@app.get("/api/logs")
 def get_logs():
     return {"logs": LOGS}
 
 
-@app.get("/api/enterprise/profile")
 def get_enterprise_profile_endpoint(enterprise_id: str = "ent_archies_001"):
     profile = {**get_enterprise_profile(enterprise_id)}
     window = get_reporting_window(enterprise_id)
@@ -1442,7 +1424,6 @@ def get_enterprise_profile_endpoint(enterprise_id: str = "ent_archies_001"):
     return profile
 
 
-@app.get("/api/enterprise/accounts")
 def get_enterprise_accounts():
     accounts = []
     for item in ENTERPRISE_ACCOUNTS:
@@ -1460,18 +1441,15 @@ def get_enterprise_accounts():
     return {"accounts": accounts}
 
 
-@app.get("/api/enterprise/dashboard")
 def get_enterprise_dashboard(date: str | None = None, enterprise_id: str = "ent_archies_001"):
     get_enterprise_account(enterprise_id)
     return build_archies_dashboard_payload(date, enterprise_id)
 
 
-@app.get("/api/enterprise/reporting-window-status")
 def get_reporting_window_status(enterprise_id: str = "ent_archies_001"):
     return get_reporting_window(enterprise_id)
 
 
-@app.post("/api/enterprise/export/csv")
 def export_enterprise_csv(enterprise_id: str = "ent_archies_001"):
     dashboard = build_archies_dashboard_payload(enterprise_id=enterprise_id)
     rows = [
@@ -1489,7 +1467,6 @@ def export_enterprise_csv(enterprise_id: str = "ent_archies_001"):
     )
 
 
-@app.post("/api/enterprise/export/pdf")
 def export_enterprise_pdf(enterprise_id: str = "ent_archies_001"):
     dashboard = build_archies_dashboard_payload(enterprise_id=enterprise_id)
     profile = get_enterprise_profile(enterprise_id)
@@ -1509,16 +1486,15 @@ def export_enterprise_pdf(enterprise_id: str = "ent_archies_001"):
     )
 
 
-@app.post("/api/enterprise/reports/submit")
 def submit_enterprise_report(body: EnterpriseReportSubmission):
     enterprise = get_enterprise_account(body.enterprise_id)
     window = get_reporting_window(body.enterprise_id)
 
     if enterprise["linked_lgu_id"] != ARCHIES_ENTERPRISE_PROFILE["linked_lgu_id"]:
-        raise HTTPException(status_code=403, detail="Enterprise is not linked to this LGU")
+        raise DomainForbiddenError("Enterprise is not linked to this LGU")
 
     if window["status"] != "OPEN":
-        raise HTTPException(status_code=409, detail="Reporting window is currently CLOSED")
+        raise DomainConflictError("Reporting window is currently CLOSED")
 
     report_pack = body.payload if body.payload else build_report_pack(body.period, body.enterprise_id)
     if not body.payload:
@@ -1540,7 +1516,6 @@ def submit_enterprise_report(body: EnterpriseReportSubmission):
     }
 
 
-@app.get("/api/lgu/overview")
 def get_lgu_overview():
     submitted = sum(1 for item in REPORTING_WINDOWS.values() if item["status"] == "SUBMITTED")
     total_enterprises = len(ENTERPRISE_ACCOUNTS)
@@ -1554,7 +1529,6 @@ def get_lgu_overview():
     }
 
 
-@app.get("/api/lgu/reports")
 def get_lgu_reports(period: str | None = None, enterprise_id: str | None = None):
     packs = LGU_REPORT_PACKS
 
@@ -1567,20 +1541,18 @@ def get_lgu_reports(period: str | None = None, enterprise_id: str | None = None)
     return {"reports": packs}
 
 
-@app.get("/api/lgu/reports/{report_id}")
 def get_lgu_report_detail(report_id: str):
     report = next((item for item in LGU_REPORT_PACKS if item["report_id"] == report_id), None)
     if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
+        raise DomainNotFoundError("Report not found")
 
     return report
 
 
-@app.post("/api/lgu/reports/{report_id}/generate-authority-package")
 def generate_authority_package(report_id: str):
     report = next((item for item in LGU_REPORT_PACKS if item["report_id"] == report_id), None)
     if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
+        raise DomainNotFoundError("Report not found")
 
     stats = compute_report_statistics(report)
     avg_dwell = report.get("kpis", {}).get("avg_dwell") or f"{stats['avg_dwell_minutes'] // 60}h {stats['avg_dwell_minutes'] % 60}m"
@@ -1614,11 +1586,10 @@ def generate_authority_package(report_id: str):
     return package
 
 
-@app.post("/api/lgu/reports/{report_id}/authority-package/pdf")
 def download_authority_package_pdf(report_id: str):
     report = next((item for item in LGU_REPORT_PACKS if item["report_id"] == report_id), None)
     if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
+        raise DomainNotFoundError("Report not found")
 
     package = AUTHORITY_PACKAGES.get(report_id) or generate_authority_package(report_id)
     stats = compute_report_statistics(report)
@@ -1630,11 +1601,10 @@ def download_authority_package_pdf(report_id: str):
     )
 
 
-@app.post("/api/lgu/reports/{report_id}/authority-package/docx")
 def download_authority_package_docx(report_id: str):
     report = next((item for item in LGU_REPORT_PACKS if item["report_id"] == report_id), None)
     if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
+        raise DomainNotFoundError("Report not found")
 
     package = AUTHORITY_PACKAGES.get(report_id) or generate_authority_package(report_id)
     stats = compute_report_statistics(report)
@@ -1656,7 +1626,6 @@ def download_authority_package_docx(report_id: str):
     )
 
 
-@app.post("/api/lgu/reporting-window/open")
 def open_reporting_window(body: ReportingWindowAction):
     get_enterprise_account(body.enterprise_id)
     window = get_reporting_window(body.enterprise_id)
@@ -1667,7 +1636,6 @@ def open_reporting_window(body: ReportingWindowAction):
     return window
 
 
-@app.post("/api/lgu/reporting-window/close")
 def close_reporting_window(body: ReportingWindowAction):
     get_enterprise_account(body.enterprise_id)
     window = get_reporting_window(body.enterprise_id)
@@ -1676,7 +1644,6 @@ def close_reporting_window(body: ReportingWindowAction):
     return window
 
 
-@app.post("/api/lgu/reporting-window/open-all")
 def open_reporting_window_all(body: ReportingWindowBulkAction):
     now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S-08:00")
     for item in REPORTING_WINDOWS.values():
@@ -1692,7 +1659,6 @@ def open_reporting_window_all(body: ReportingWindowBulkAction):
     }
 
 
-@app.post("/api/lgu/reporting-window/close-all")
 def close_reporting_window_all(body: ReportingWindowBulkAction):
     for item in REPORTING_WINDOWS.values():
         item["period"] = body.period
@@ -1705,7 +1671,6 @@ def close_reporting_window_all(body: ReportingWindowBulkAction):
     }
 
 
-@app.get("/api/lgu/enterprise-accounts")
 def get_lgu_enterprise_accounts(period: str | None = None):
     target_period = period or "2026-03"
     accounts = []
@@ -1729,7 +1694,6 @@ def get_lgu_enterprise_accounts(period: str | None = None):
     return {"accounts": accounts, "period": target_period}
 
 
-@app.post("/api/enterprise/actions/request-maintenance")
 def enterprise_request_maintenance(body: EnterpriseActionRequest):
     get_enterprise_account(body.enterprise_id)
     ticket = {
@@ -1743,7 +1707,6 @@ def enterprise_request_maintenance(body: EnterpriseActionRequest):
     return {"message": "Maintenance request submitted.", "ticket": ticket}
 
 
-@app.post("/api/enterprise/actions/manual-log-correction")
 def enterprise_manual_log_correction(body: EnterpriseActionRequest):
     get_enterprise_account(body.enterprise_id)
     ticket = {
@@ -1757,7 +1720,6 @@ def enterprise_manual_log_correction(body: EnterpriseActionRequest):
     return {"message": "Manual log correction request submitted.", "ticket": ticket}
 
 
-@app.get("/api/enterprise/reports/history")
 def get_enterprise_report_history(enterprise_id: str = "ent_archies_001"):
     get_enterprise_account(enterprise_id)
     reports = [item for item in LGU_REPORT_PACKS if item.get("enterprise_id") == enterprise_id]
@@ -1765,7 +1727,6 @@ def get_enterprise_report_history(enterprise_id: str = "ent_archies_001"):
     return {"enterprise_id": enterprise_id, "reports": reports_sorted}
 
 
-@app.get("/api/enterprise/camera/stream")
 def get_enterprise_camera_stream(enterprise_id: str = "ent_archies_001"):
     enterprise_id = resolve_enterprise_id(enterprise_id)
     get_enterprise_account(enterprise_id)
@@ -1778,7 +1739,6 @@ def get_enterprise_camera_stream(enterprise_id: str = "ent_archies_001"):
     return frame
 
 
-@app.websocket("/ws/enterprise/camera/{enterprise_id}")
 async def ws_enterprise_camera_stream(websocket: WebSocket, enterprise_id: str):
     enterprise_id = resolve_enterprise_id(enterprise_id)
     if not any(item["enterprise_id"] == enterprise_id for item in ENTERPRISE_ACCOUNTS):
@@ -1803,7 +1763,6 @@ async def ws_enterprise_camera_stream(websocket: WebSocket, enterprise_id: str):
         CAMERA_SUBSCRIBERS.get(enterprise_id, set()).discard(websocket)
 
 
-@app.get("/api/enterprise/recommendations")
 def get_enterprise_recommendations(enterprise_id: str = "ent_archies_001"):
     get_enterprise_account(enterprise_id)
     return {
