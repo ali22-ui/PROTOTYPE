@@ -57,6 +57,7 @@ export function usePersonDetection({
   const tracksRef = useRef(new Map());
   const animationFrameRef = useRef(null);
   const lastDetectionTimeRef = useRef(0);
+  const lastTimestampRef = useRef(0); // Track last timestamp to ensure monotonic increase
 
   const [state, setState] = useState(DetectionState.IDLE);
   const [error, setError] = useState(null);
@@ -192,12 +193,18 @@ export function usePersonDetection({
       }
       lastDetectionTimeRef.current = now;
 
+      // Ensure strictly monotonically increasing timestamps for MediaPipe
+      // MediaPipe requires timestamps to always increase; using performance.now()
+      // and ensuring it's always greater than the last used timestamp
+      const safeTimestamp = Math.max(Math.floor(now), lastTimestampRef.current + 1);
+      lastTimestampRef.current = safeTimestamp;
+
       try {
         const results = detectorRef.current.detectForVideo(
           videoElement,
-          timestamp
+          safeTimestamp
         );
-        const trackedDetections = updateTracks(results.detections, timestamp);
+        const trackedDetections = updateTracks(results.detections, safeTimestamp);
         setDetections(trackedDetections);
 
         // Update FPS counter
@@ -228,6 +235,12 @@ export function usePersonDetection({
       return false;
     }
 
+    // Cancel any existing animation frame to prevent duplicates
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+
     const modelLoaded = await loadModel();
     if (!modelLoaded) return false;
 
@@ -235,9 +248,10 @@ export function usePersonDetection({
     setState(DetectionState.RUNNING);
     tracksRef.current.clear();
     fpsCounterRef.current = { frames: 0, lastTime: Date.now() };
+    lastTimestampRef.current = 0; // Reset timestamp tracker
 
-    const loop = (timestamp) => {
-      detectFrame(timestamp);
+    const loop = () => {
+      detectFrame();
       animationFrameRef.current = requestAnimationFrame(loop);
     };
 
@@ -276,22 +290,13 @@ export function usePersonDetection({
     };
   }, []);
 
+  // Cleanup on unmount or when detection stops
   useEffect(() => {
-    const videoElement = videoRef?.current;
-    if (isRunning && videoElement && !videoElement.paused) {
-      const loop = (timestamp) => {
-        detectFrame(timestamp);
-        animationFrameRef.current = requestAnimationFrame(loop);
-      };
-      animationFrameRef.current = requestAnimationFrame(loop);
-
-      return () => {
-        if (animationFrameRef.current) {
-          cancelAnimationFrame(animationFrameRef.current);
-        }
-      };
+    if (!isRunning && animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
     }
-  }, [isRunning, videoRef, detectFrame]);
+  }, [isRunning]);
 
   return {
     state,

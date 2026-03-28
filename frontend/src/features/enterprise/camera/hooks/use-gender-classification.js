@@ -114,7 +114,7 @@ export function useGenderClassification({
   const extractPersonCrop = useCallback(
     (videoElement, bbox) => {
       const canvas = initCanvas();
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
       const sourceX = (bbox.x / 100) * videoElement.videoWidth;
       const sourceY = (bbox.y / 100) * videoElement.videoHeight;

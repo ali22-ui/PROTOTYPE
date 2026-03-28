@@ -51,7 +51,13 @@ class Settings(BaseSettings):
 
     @property
     def supabase_enabled(self) -> bool:
-        return bool(self.supabase_url and self.supabase_service_role_key)
+        # Check if credentials are real (not placeholder values)
+        return bool(
+            self.supabase_url
+            and self.supabase_service_role_key
+            and not self.supabase_service_role_key.startswith("your_")
+            and len(self.supabase_service_role_key) > 50  # Real keys are much longer
+        )
 
 
 @lru_cache(maxsize=1)
