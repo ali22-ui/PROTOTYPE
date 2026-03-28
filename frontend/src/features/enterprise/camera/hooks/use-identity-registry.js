@@ -2,7 +2,7 @@
  * Identity Registry hook for managing unique person identities.
  * Handles track-to-identity mapping, identity merging, and statistics.
  */
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 /**
  * Identity status enum.
@@ -53,27 +53,27 @@ function createPersonIdentity(trackId, options = {}) {
     lastSeen: now,
     totalDwellMs: 0,
     activeStartTime: now,
-    
+
     // Demographics
     demographics: {
       gender: options.gender || 'unknown',
       genderConfidence: options.genderConfidence || 0,
     },
-    
+
     // Features for matching
     appearance: options.appearance || null,
     faceEmbedding: options.faceEmbedding || null,
-    
+
     // Last known position
     lastBbox: options.bbox || null,
     lastCentroid: options.centroid || null,
-    
+
     // Status tracking
     status: IdentityStatus.ACTIVE,
     reIdMethod: ReIdMethod.NONE,
     reIdConfidence: 0,
     reIdCount: 0, // Number of times re-identified
-    
+
     // Match history for debugging
     matchHistory: [],
   };
@@ -83,14 +83,14 @@ function createPersonIdentity(trackId, options = {}) {
  * Hook for managing person identities.
  */
 export function useIdentityRegistry(options = {}) {
-  const config = { ...DEFAULT_CONFIG, ...options };
-  
+  const config = useMemo(() => ({ ...DEFAULT_CONFIG, ...options }), [options]);
+
   // Main identity store: Map<personId, PersonIdentity>
   const identitiesRef = useRef(new Map());
-  
+
   // Track to identity mapping: Map<trackId, personId>
   const trackToIdentityRef = useRef(new Map());
-  
+
   // Statistics
   const [stats, setStats] = useState({
     totalUniquePersons: 0,
@@ -150,7 +150,7 @@ export function useIdentityRegistry(options = {}) {
   const findMatchingIdentity = useCallback((detection, matchers = {}) => {
     const { computeAppearanceSimilarity, euclideanDistance } = matchers;
     const identities = identitiesRef.current;
-    
+
     let bestMatch = null;
     let bestConfidence = 0;
     let bestMethod = ReIdMethod.NONE;
@@ -186,7 +186,7 @@ export function useIdentityRegistry(options = {}) {
         const dx = detection.centroid.x - identity.lastCentroid.x;
         const dy = detection.centroid.y - identity.lastCentroid.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
-        
+
         // Allow larger distance for dormant tracks (they may have moved)
         const maxDistance = 200; // pixels
         if (distance < maxDistance) {
@@ -226,7 +226,7 @@ export function useIdentityRegistry(options = {}) {
         identity.lastBbox = bbox;
         identity.lastCentroid = centroid;
         identity.status = IdentityStatus.ACTIVE;
-        
+
         // Update dwell time
         if (identity.activeStartTime) {
           identity.totalDwellMs += now - identity.activeStartTime;
@@ -260,7 +260,7 @@ export function useIdentityRegistry(options = {}) {
     if (match) {
       // Re-identify: Link this track to existing identity
       const identity = match.identity;
-      
+
       identity.trackIds.push(trackId);
       identity.lastSeen = now;
       identity.lastBbox = bbox;
@@ -270,7 +270,7 @@ export function useIdentityRegistry(options = {}) {
       identity.reIdConfidence = match.confidence;
       identity.reIdCount++;
       identity.activeStartTime = now;
-      
+
       // Update features
       if (appearance) identity.appearance = appearance;
       if (faceEmbedding) identity.faceEmbedding = faceEmbedding;
@@ -308,7 +308,7 @@ export function useIdentityRegistry(options = {}) {
       const sortedByLastSeen = Array.from(identitiesRef.current.entries())
         .filter(([, id]) => id.status === IdentityStatus.EXITED)
         .sort((a, b) => a[1].lastSeen - b[1].lastSeen);
-      
+
       if (sortedByLastSeen.length > 0) {
         const [oldestId] = sortedByLastSeen[0];
         const oldIdentity = identitiesRef.current.get(oldestId);
@@ -454,26 +454,25 @@ export function useIdentityRegistry(options = {}) {
   return {
     // State
     stats,
-    
+
     // Registration
     registerDetection,
     updateDormantTracks,
-    
+
     // Queries
     getIdentity,
     getIdentityByTrackId,
     getActiveIdentities,
     getAllIdentities,
     getUniqueCount,
-    
+
     // Management
     mergeIdentities,
     clear,
-    
+
     // Config
     config,
   };
 }
 
-export { IdentityStatus, ReIdMethod };
 export default useIdentityRegistry;

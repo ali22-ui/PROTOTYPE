@@ -3,20 +3,17 @@
  * Combines geometric tracking, appearance matching, and face embedding for
  * accurate unique person counting.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createKalmanFilter,
   predict,
   update,
   getPosition,
-  getVelocity,
   getSpeed,
-  predictPosition,
 } from './kalman-filter';
 import {
   calculateIOU,
   nonMaxSuppression,
-  centerDistance,
 } from './iou-utils';
 import {
   extractAppearanceFeatures,
@@ -24,7 +21,7 @@ import {
   updateRollingAverage,
 } from './appearance-features';
 import { useFaceEmbedding } from './use-face-embedding';
-import { useIdentityRegistry, IdentityStatus, ReIdMethod } from './use-identity-registry';
+import { useIdentityRegistry, ReIdMethod } from './use-identity-registry';
 
 /**
  * Track status enum.
@@ -43,24 +40,24 @@ const DEFAULT_CONFIG = {
   baseDistanceThreshold: 100,    // Base distance threshold in pixels
   adaptiveThresholdScale: true,  // Scale threshold based on bbox size
   maxVelocityAdjustment: 50,     // Max additional distance based on velocity
-  
+
   // Track memory
   dormantTimeMs: 30000,          // Time before active -> dormant (30s)
   lostTimeMs: 60000,             // Time before dormant -> lost (60s)
   maxDormantTracks: 50,          // Max dormant tracks to keep
-  
+
   // Appearance matching
   enableAppearance: true,        // Enable appearance-based re-ID
   appearanceThreshold: 0.65,     // Minimum similarity for appearance match
   appearanceUpdateInterval: 5,   // Update appearance every N frames
-  
+
   // Face embedding
   enableFaceEmbedding: true,     // Enable face-based re-ID
   faceExtractionInterval: 10,    // Extract face every N frames
-  
+
   // IOU filtering
   iouDuplicateThreshold: 0.5,    // IOU threshold for duplicate detection
-  
+
   // Performance
   maxTracksPerFrame: 20,         // Max tracks to process per frame
 };
@@ -81,32 +78,32 @@ function createEnhancedTrack(trackId, detection, options = {}) {
     firstSeen: now,
     lastSeen: now,
     frameCount: 1,
-    
+
     // Position tracking
     centroid,
     bbox: { ...detection.boundingBox },
     bboxPercent: options.bboxPercent || null,
     kalmanFilter: createKalmanFilter(centroid),
-    
+
     // Appearance features
     appearance: null,
     appearanceUpdateCount: 0,
-    
+
     // Face embedding
     faceEmbedding: null,
     faceExtractionCount: 0,
-    
+
     // Detection confidence
     confidence: detection.categories?.[0]?.score || 0,
-    
+
     // Classification
     gender: options.gender || 'unknown',
     genderConfidence: options.genderConfidence || 0,
-    
+
     // Status
     status: TrackStatus.ACTIVE,
     missedFrames: 0,
-    
+
     // Re-identification info
     reIdMethod: ReIdMethod.NONE,
     reIdConfidence: 0,
@@ -117,19 +114,19 @@ function createEnhancedTrack(trackId, detection, options = {}) {
  * Hook for deduplicated person tracking.
  */
 export function useDeduplication(options = {}) {
-  const config = { ...DEFAULT_CONFIG, ...options };
-  
+  const config = useMemo(() => ({ ...DEFAULT_CONFIG, ...options }), [options]);
+
   // Track storage
   const tracksRef = useRef(new Map());     // trackId -> EnhancedTrack
   const frameCountRef = useRef(0);
   const canvasRef = useRef(null);
-  
+
   // Sub-hooks
   const faceEmbedding = useFaceEmbedding({
     minConfidence: 0.5,
     matchThreshold: 0.6,
   });
-  
+
   const identityRegistry = useIdentityRegistry({
     dormantExpiryMs: config.dormantTimeMs,
     appearanceMatchThreshold: config.appearanceThreshold,
@@ -144,7 +141,7 @@ export function useDeduplication(options = {}) {
     reIdRate: 0,
     avgProcessingTime: 0,
   });
-  
+
   const [isInitialized, setIsInitialized] = useState(false);
 
   /**
@@ -158,7 +155,7 @@ export function useDeduplication(options = {}) {
       if (config.enableFaceEmbedding) {
         await faceEmbedding.loadModels();
       }
-      
+
       setIsInitialized(true);
       return true;
     } catch (err) {
@@ -176,7 +173,7 @@ export function useDeduplication(options = {}) {
     if (config.adaptiveThresholdScale && track.bbox) {
       // Scale based on bounding box diagonal
       const diagonal = Math.sqrt(
-        track.bbox.width * track.bbox.width + 
+        track.bbox.width * track.bbox.width +
         track.bbox.height * track.bbox.height
       );
       const scaleFactor = diagonal / 200; // Normalize to typical person size
@@ -223,7 +220,7 @@ export function useDeduplication(options = {}) {
       if (distance < threshold) {
         // Also consider IOU for better matching
         const iou = calculateIOU(detection.boundingBox, track.bbox);
-        
+
         // Combined score: prioritize closer matches with higher IOU
         const distanceScore = 1 - (distance / threshold);
         const score = distanceScore * 0.6 + iou * 0.4;
@@ -290,7 +287,7 @@ export function useDeduplication(options = {}) {
     const startTime = performance.now();
     const now = Date.now();
     frameCountRef.current++;
-    
+
     const tracks = tracksRef.current;
     const matchedTrackIds = new Set();
     const results = [];
@@ -355,9 +352,9 @@ export function useDeduplication(options = {}) {
         track.status = TrackStatus.ACTIVE;
 
         // Update appearance periodically
-        if (config.enableAppearance && 
-            track.frameCount % config.appearanceUpdateInterval === 0 &&
-            videoElement) {
+        if (config.enableAppearance &&
+          track.frameCount % config.appearanceUpdateInterval === 0 &&
+          videoElement) {
           const newAppearance = extractAppearanceFeatures(canvas, {
             x: detection.boundingBox.originX,
             y: detection.boundingBox.originY,
@@ -371,10 +368,10 @@ export function useDeduplication(options = {}) {
         }
 
         // Extract face embedding periodically
-        if (config.enableFaceEmbedding && 
-            faceEmbedding.isReady &&
-            track.frameCount % config.faceExtractionInterval === 0 &&
-            bboxPercent) {
+        if (config.enableFaceEmbedding &&
+          faceEmbedding.isReady &&
+          track.frameCount % config.faceExtractionInterval === 0 &&
+          bboxPercent) {
           const faceData = await faceEmbedding.extractFaceEmbedding(
             videoElement,
             bboxPercent,
@@ -396,10 +393,10 @@ export function useDeduplication(options = {}) {
       if (!matched) {
         // Try to match with dormant tracks
         let reIdentified = false;
-        
+
         // Extract features for matching
         const features = {
-          appearance: config.enableAppearance && videoElement ? 
+          appearance: config.enableAppearance && videoElement ?
             extractAppearanceFeatures(canvas, {
               x: detection.boundingBox.originX,
               y: detection.boundingBox.originY,
@@ -422,7 +419,7 @@ export function useDeduplication(options = {}) {
         }
 
         const dormantMatch = findDormantMatch(detection, dormantTracks, features);
-        
+
         if (dormantMatch) {
           // Re-identify: reactivate dormant track
           const track = dormantMatch.track;
@@ -496,7 +493,7 @@ export function useDeduplication(options = {}) {
     for (const track of tracks.values()) {
       if (!activeTrackIds.has(track.trackId)) {
         track.missedFrames++;
-        
+
         if (track.status === TrackStatus.ACTIVE) {
           if (track.missedFrames * 150 > config.dormantTimeMs) { // Assuming ~150ms per frame
             track.status = TrackStatus.DORMANT;
@@ -523,7 +520,7 @@ export function useDeduplication(options = {}) {
     const dormant = Array.from(tracks.values())
       .filter(t => t.status === TrackStatus.DORMANT)
       .sort((a, b) => a.lastSeen - b.lastSeen);
-    
+
     while (dormant.length > config.maxDormantTracks) {
       const oldest = dormant.shift();
       if (oldest) {
@@ -579,8 +576,9 @@ export function useDeduplication(options = {}) {
    * Cleanup on unmount.
    */
   useEffect(() => {
+    const tracks = tracksRef.current;
     return () => {
-      tracksRef.current.clear();
+      tracks.clear();
       if (canvasRef.current) {
         canvasRef.current = null;
       }
@@ -612,5 +610,4 @@ export function useDeduplication(options = {}) {
   };
 }
 
-export { TrackStatus };
 export default useDeduplication;

@@ -181,7 +181,7 @@ export function usePersonDetection({
    * Run detection on current video frame.
    */
   const detectFrame = useCallback(
-    (timestamp) => {
+    (_timestamp) => {
       const videoElement = videoRef?.current;
       if (!detectorRef.current || !videoElement || videoElement.paused || videoElement.readyState < 2) {
         return [];

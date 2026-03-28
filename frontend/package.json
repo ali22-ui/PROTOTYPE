@@ -15,6 +15,7 @@
     "@mediapipe/tasks-vision": "^0.10.18",
     "@supabase/supabase-js": "^2.49.4",
     "@tensorflow/tfjs": "^4.22.0",
+    "@vladmandic/face-api": "^1.7.15",
     "axios": "^1.8.4",
     "leaflet": "^1.9.4",
     "leaflet.heat": "^0.2.0",

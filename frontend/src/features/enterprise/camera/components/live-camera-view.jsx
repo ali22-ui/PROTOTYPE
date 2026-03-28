@@ -29,11 +29,10 @@ import {
   useGenderClassification,
   Gender,
   useDeduplication,
-  TrackStatus,
 } from '../hooks';
-import { useFaceEmbedding, FaceEmbeddingState } from '../hooks/use-face-embedding';
+import { FaceEmbeddingState } from '../hooks/use-face-embedding';
 import { ReIdMethod } from '../hooks/use-identity-registry';
-import { sendDetectionBatch, sendUnifiedDetectionBatch } from '../api/detection-api';
+import { sendDetectionBatch } from '../api/detection-api';
 
 const BATCH_INTERVAL_MS = 5000;
 const MAX_BATCH_SIZE = 50;
@@ -77,7 +76,6 @@ export default function LiveCameraView() {
 
   const {
     detections: rawDetections,
-    trackCount,
     fps,
     state: detectionState,
     isRunning: isDetecting,

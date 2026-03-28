@@ -2,7 +2,7 @@
  * Face embedding hook using face-api.js for high-accuracy person re-identification.
  * Extracts 128-D face descriptors that can be used to match faces across frames.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 /**
  * Face embedding state enum.
@@ -41,12 +41,12 @@ const MODEL_URLS = {
  * @returns {object} Face embedding state and methods
  */
 export function useFaceEmbedding(options = {}) {
-  const config = { ...DEFAULT_CONFIG, ...options };
-  
+  const config = useMemo(() => ({ ...DEFAULT_CONFIG, ...options }), [options]);
+
   const faceapiRef = useRef(null);
   const embeddingCacheRef = useRef(new Map()); // trackId -> { embedding, timestamp, confidence }
   const extractionTimesRef = useRef(new Map()); // trackId -> lastExtractionTime
-  
+
   const [state, setState] = useState(FaceEmbeddingState.IDLE);
   const [error, setError] = useState(null);
   const [isReady, setIsReady] = useState(false);
@@ -122,7 +122,7 @@ export function useFaceEmbedding(options = {}) {
       // Convert percentage bbox to pixels
       const videoWidth = videoElement.videoWidth;
       const videoHeight = videoElement.videoHeight;
-      
+
       const pixelX = (bbox.x / 100) * videoWidth;
       const pixelY = (bbox.y / 100) * videoHeight;
       const pixelW = (bbox.w / 100) * videoWidth;
@@ -159,8 +159,8 @@ export function useFaceEmbedding(options = {}) {
       // Check minimum confidence and size
       const faceBox = detection.detection.box;
       if (detection.detection.score < config.minConfidence ||
-          faceBox.width < config.minFaceSize ||
-          faceBox.height < config.minFaceSize) {
+        faceBox.width < config.minFaceSize ||
+        faceBox.height < config.minFaceSize) {
         return null;
       }
 
@@ -301,9 +301,11 @@ export function useFaceEmbedding(options = {}) {
    * Cleanup on unmount.
    */
   useEffect(() => {
+    const embeddingCache = embeddingCacheRef.current;
+    const extractionTimes = extractionTimesRef.current;
     return () => {
-      embeddingCacheRef.current.clear();
-      extractionTimesRef.current.clear();
+      embeddingCache.clear();
+      extractionTimes.clear();
     };
   }, []);
 
