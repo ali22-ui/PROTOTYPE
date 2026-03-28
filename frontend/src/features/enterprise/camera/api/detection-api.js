@@ -1,7 +1,7 @@
 /**
  * Detection API client for sending detection events to backend.
  */
-import api, { getApiBaseUrl } from '../../../../lib/api-client';
+import api from '../../../../lib/api-client';
 
 /**
  * Send a batch of detection events to the backend.

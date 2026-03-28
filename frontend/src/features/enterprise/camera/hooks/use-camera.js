@@ -202,10 +202,12 @@ export function useCamera({
   }, [stream]);
 
   useEffect(() => {
-    enumerateDevices();
+    // Initial device enumeration on mount
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Device enumeration on mount is intentional
+    void enumerateDevices();
 
     const handleDeviceChange = () => {
-      enumerateDevices();
+      void enumerateDevices();
     };
 
     navigator.mediaDevices?.addEventListener('devicechange', handleDeviceChange);
@@ -221,7 +223,8 @@ export function useCamera({
 
   useEffect(() => {
     if (autoStart && state === CameraState.IDLE) {
-      startStream();
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Auto-start on mount is intentional
+      void startStream();
     }
   }, [autoStart, state, startStream]);
 

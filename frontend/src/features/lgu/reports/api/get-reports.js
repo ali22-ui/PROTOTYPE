@@ -1,13 +1,5 @@
 import { api, withFallback, getSelectedEnterpriseId, getCameraWebSocketUrl, extractFilename } from '@/lib/api-client';
 
-const fallbackReportingWindow = {
-  enterprise_id: 'ent_archies_001',
-  period: '2026-03',
-  status: 'CLOSED',
-  opened_at: '2026-03-26T18:00:00-08:00',
-  opened_by: 'lgu_admin_01',
-};
-
 const fallbackLguEnterpriseAccounts = {
   period: '2026-03',
   accounts: [

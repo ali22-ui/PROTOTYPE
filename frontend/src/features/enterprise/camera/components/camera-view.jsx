@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   Camera,
@@ -18,18 +18,22 @@ export default function CameraView() {
   const [detections, setDetections] = useState([]);
   const [connectionMode, setConnectionMode] = useState('connecting');
   const [videoSourceIndex, setVideoSourceIndex] = useState(0);
+  const initialLoadRef = useRef(false);
 
-  const loadFrame = async () => {
+  const loadFrame = useCallback(async () => {
     const data = await fetchEnterpriseCameraStream();
     setStreamData(data);
     setDetections(data.events || []);
-  };
+  }, []);
 
   useEffect(() => {
+    if (initialLoadRef.current) return;
+    initialLoadRef.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Initial data fetch on mount is intentional
     loadFrame().catch((error) =>
       console.error('Failed to load camera stream frame:', error),
     );
-  }, []);
+  }, [loadFrame]);
 
   useEffect(() => {
     if (!isRunning) return undefined;
@@ -51,7 +55,7 @@ export default function CameraView() {
     const connect = () => {
       setConnectionMode('connecting');
       try {
-        socket = new WebSocket(getCameraWebSocketUrl());
+        socket = new globalThis.WebSocket(getCameraWebSocketUrl());
       } catch (error) {
         console.error(
           'WebSocket initialization failed, falling back to polling:',
@@ -73,7 +77,7 @@ export default function CameraView() {
       };
 
       socket.onerror = () => {
-        if (connectionMode !== 'polling-fallback') startFallbackPolling();
+        if (!fallbackTimer) startFallbackPolling();
       };
 
       socket.onclose = () => {
@@ -91,9 +95,9 @@ export default function CameraView() {
       isClosed = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (fallbackTimer) clearInterval(fallbackTimer);
-      if (socket && socket.readyState === WebSocket.OPEN) socket.close();
+      if (socket && socket.readyState === globalThis.WebSocket.OPEN) socket.close();
     };
-  }, [isRunning]);
+  }, [isRunning, loadFrame]);
 
   const fps = useMemo(() => streamData?.fps || 0, [streamData]);
   const demoVideoSources = useMemo(

@@ -109,7 +109,7 @@ export function usePersonDetection({
    * Match current detections to existing tracks using centroid distance.
    */
   const updateTracks = useCallback(
-    (rawDetections, timestamp) => {
+    (rawDetections, _timestamp) => {
       const videoElement = videoRef?.current;
       if (!videoElement) return [];
 

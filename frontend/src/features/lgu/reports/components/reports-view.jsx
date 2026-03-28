@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Area,
   AreaChart,
@@ -65,7 +65,7 @@ export default function ReportsView() {
   const [lguCameraMode, setLguCameraMode] = useState('idle');
   const [lguVideoSourceIndex, setLguVideoSourceIndex] = useState(0);
 
-  const loadAll = async () => {
+  const loadAll = useCallback(async () => {
     const [reportsRes, accountsRes] = await Promise.all([
       fetchLguReports({ period }),
       fetchLguEnterpriseAccounts(period),
@@ -73,13 +73,13 @@ export default function ReportsView() {
 
     setReports(reportsRes.reports || []);
     setAccounts(accountsRes.accounts || []);
-  };
+  }, [period]);
 
   useEffect(() => {
-    loadAll().catch((error) => {
+    void loadAll().catch((error) => {
       console.error('Failed to load LGU reports:', error);
     });
-  }, [period]);
+  }, [loadAll]);
 
   useEffect(() => {
     if (!selectedReportDetail?.enterprise_id) return undefined;
@@ -107,7 +107,7 @@ export default function ReportsView() {
     const connect = () => {
       setLguCameraMode('connecting');
       try {
-        socket = new WebSocket(getCameraWebSocketUrl(enterpriseId));
+        socket = new globalThis.WebSocket(getCameraWebSocketUrl(enterpriseId));
       } catch (error) {
         console.error('LGU camera websocket init failed:', error);
         startFallback();
@@ -146,7 +146,7 @@ export default function ReportsView() {
       isClosed = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (fallbackTimer) clearInterval(fallbackTimer);
-      if (socket && socket.readyState === WebSocket.OPEN) socket.close();
+      if (socket && socket.readyState === globalThis.WebSocket.OPEN) socket.close();
     };
   }, [selectedReportDetail?.enterprise_id]);
 

@@ -119,7 +119,7 @@ export const exportEnterprisePdf = async () => {
     };
   } catch (error) {
     console.warn('PDF export failed:', error?.message);
-    throw new Error(error?.response?.data?.detail || 'Unable to fetch monthly PDF report from backend.');
+    throw new Error(error?.response?.data?.detail || 'Unable to fetch monthly PDF report from backend.', { cause: error });
   }
 };
 

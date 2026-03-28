@@ -76,7 +76,7 @@ export function useGenderClassification({
       // a proper model is integrated
       modelRef.current = {
         type: 'heuristic',
-        classify: async (imageData) => {
+        classify: async (_imageData) => {
           // Simplified classification based on image features
           // In production, replace with actual model inference
           // Example: tf.loadLayersModel('path/to/gender_model/model.json')

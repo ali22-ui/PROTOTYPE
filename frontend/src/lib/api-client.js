@@ -42,7 +42,7 @@ export const createMinimalPdfBlob = (lines) => {
     'ET',
   ].join('\n');
 
-  const encoder = new TextEncoder();
+  const encoder = new globalThis.TextEncoder();
   const streamBytes = encoder.encode(stream);
   const objects = [
     '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',

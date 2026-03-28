@@ -35,7 +35,7 @@ export default function LiveCameraView() {
   const batchBufferRef = useRef([]);
   const lastBatchTimeRef = useRef(Date.now());
 
-  const [isDetectionActive, setIsDetectionActive] = useState(false);
+  const [, setIsDetectionActive] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [detectionLogs, setDetectionLogs] = useState([]);
   const [stats, setStats] = useState({
@@ -59,10 +59,10 @@ export default function LiveCameraView() {
   } = useCamera({ autoStart: false });
 
   const {
-    state: detectionState,
     detections,
     trackCount,
     fps,
+    state: detectionState,
     isRunning: isDetecting,
     startDetection,
     stopDetection,
@@ -71,7 +71,6 @@ export default function LiveCameraView() {
   });
 
   const {
-    state: classificationState,
     loadModel: loadGenderModel,
     classifyDetections,
     isReady: isClassificationReady,
@@ -208,7 +207,7 @@ export default function LiveCameraView() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       for (const detection of detections) {
-        const { bbox, sex, sexConfidence, trackId } = detection;
+        const { bbox, sex, sexConfidence } = detection;
         const x = (bbox.x / 100) * canvas.width;
         const y = (bbox.y / 100) * canvas.height;
         const w = (bbox.w / 100) * canvas.width;
