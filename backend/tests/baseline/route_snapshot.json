@@ -1,0 +1,235 @@
+{
+  "generated_at": "2026-03-27",
+  "http": [
+    {
+      "path": "/api/barangays",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_barangays"
+    },
+    {
+      "path": "/api/barangays/geojson",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_barangays_geojson"
+    },
+    {
+      "path": "/api/barangays/{barangay_name}/enterprises",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_barangay_enterprises"
+    },
+    {
+      "path": "/api/enterprise/accounts",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_enterprise_accounts"
+    },
+    {
+      "path": "/api/enterprise/actions/manual-log-correction",
+      "methods": [
+        "POST"
+      ],
+      "name": "enterprise_manual_log_correction"
+    },
+    {
+      "path": "/api/enterprise/actions/request-maintenance",
+      "methods": [
+        "POST"
+      ],
+      "name": "enterprise_request_maintenance"
+    },
+    {
+      "path": "/api/enterprise/camera/stream",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_enterprise_camera_stream"
+    },
+    {
+      "path": "/api/enterprise/dashboard",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_enterprise_dashboard"
+    },
+    {
+      "path": "/api/enterprise/export/csv",
+      "methods": [
+        "POST"
+      ],
+      "name": "export_enterprise_csv"
+    },
+    {
+      "path": "/api/enterprise/export/pdf",
+      "methods": [
+        "POST"
+      ],
+      "name": "export_enterprise_pdf"
+    },
+    {
+      "path": "/api/enterprise/profile",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_enterprise_profile_endpoint"
+    },
+    {
+      "path": "/api/enterprise/recommendations",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_enterprise_recommendations"
+    },
+    {
+      "path": "/api/enterprise/reporting-window-status",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_reporting_window_status"
+    },
+    {
+      "path": "/api/enterprise/reports/history",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_enterprise_report_history"
+    },
+    {
+      "path": "/api/enterprise/reports/submit",
+      "methods": [
+        "POST"
+      ],
+      "name": "submit_enterprise_report"
+    },
+    {
+      "path": "/api/enterprises",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_enterprises"
+    },
+    {
+      "path": "/api/enterprises/{enterprise_id}/analytics",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_enterprise_analytics"
+    },
+    {
+      "path": "/api/health",
+      "methods": [
+        "GET"
+      ],
+      "name": "health_check"
+    },
+    {
+      "path": "/api/lgu/enterprise-accounts",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_lgu_enterprise_accounts"
+    },
+    {
+      "path": "/api/lgu/overview",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_lgu_overview"
+    },
+    {
+      "path": "/api/lgu/reporting-window/close",
+      "methods": [
+        "POST"
+      ],
+      "name": "close_reporting_window"
+    },
+    {
+      "path": "/api/lgu/reporting-window/close-all",
+      "methods": [
+        "POST"
+      ],
+      "name": "close_reporting_window_all"
+    },
+    {
+      "path": "/api/lgu/reporting-window/open",
+      "methods": [
+        "POST"
+      ],
+      "name": "open_reporting_window"
+    },
+    {
+      "path": "/api/lgu/reporting-window/open-all",
+      "methods": [
+        "POST"
+      ],
+      "name": "open_reporting_window_all"
+    },
+    {
+      "path": "/api/lgu/reports",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_lgu_reports"
+    },
+    {
+      "path": "/api/lgu/reports/{report_id}",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_lgu_report_detail"
+    },
+    {
+      "path": "/api/lgu/reports/{report_id}/authority-package/docx",
+      "methods": [
+        "POST"
+      ],
+      "name": "download_authority_package_docx"
+    },
+    {
+      "path": "/api/lgu/reports/{report_id}/authority-package/pdf",
+      "methods": [
+        "POST"
+      ],
+      "name": "download_authority_package_pdf"
+    },
+    {
+      "path": "/api/lgu/reports/{report_id}/generate-authority-package",
+      "methods": [
+        "POST"
+      ],
+      "name": "generate_authority_package"
+    },
+    {
+      "path": "/api/logs",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_logs"
+    },
+    {
+      "path": "/api/overview",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_overview"
+    },
+    {
+      "path": "/api/reports",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_reports"
+    }
+  ],
+  "websocket": [
+    {
+      "path": "/ws/enterprise/camera/{enterprise_id}",
+      "name": "ws_enterprise_camera_stream"
+    }
+  ]
+}
