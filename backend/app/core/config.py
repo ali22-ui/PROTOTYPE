@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Any
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -8,10 +9,10 @@ class Settings(BaseSettings):
     app_name: str = "LGU Dashboard Mock API"
     app_version: str = "1.0.0"
     debug: bool = False
-    cors_origins: list[str] = ["*"]
+    cors_origins: str = "*"  # Comma-separated string, parsed later
     cors_allow_credentials: bool = True
-    cors_allow_methods: list[str] = ["*"]
-    cors_allow_headers: list[str] = ["*"]
+    cors_allow_methods: str = "*"  # Comma-separated string
+    cors_allow_headers: str = "*"  # Comma-separated string
 
     # Supabase Configuration
     supabase_url: str = ""
@@ -27,12 +28,26 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    @field_validator("cors_origins", "cors_allow_methods", "cors_allow_headers", mode="before")
-    @classmethod
-    def parse_csv_or_list(cls, value: str | list[str]) -> list[str]:
-        if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
-        return value
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Parse CORS origins from comma-separated string."""
+        if self.cors_origins == "*":
+            return ["*"]
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def cors_allow_methods_list(self) -> list[str]:
+        """Parse CORS methods from comma-separated string."""
+        if self.cors_allow_methods == "*":
+            return ["*"]
+        return [method.strip() for method in self.cors_allow_methods.split(",") if method.strip()]
+
+    @property
+    def cors_allow_headers_list(self) -> list[str]:
+        """Parse CORS headers from comma-separated string."""
+        if self.cors_allow_headers == "*":
+            return ["*"]
+        return [header.strip() for header in self.cors_allow_headers.split(",") if header.strip()]
 
     @property
     def supabase_enabled(self) -> bool:
