@@ -35,7 +35,7 @@ const EnterpriseDashboard = lazy(
     import('@/features/enterprise/dashboard/components/enterprise-dashboard'),
 );
 const CameraView = lazy(
-  () => import('@/features/enterprise/camera/components/camera-view'),
+  () => import('@/features/enterprise/camera/components/camera-page'),
 );
 const EnterpriseReportsView = lazy(
   () => import('@/features/enterprise/reports/components/reports-view'),
