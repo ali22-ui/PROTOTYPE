@@ -67,9 +67,10 @@ const DEFAULT_CONFIG = {
  */
 function createEnhancedTrack(trackId, detection, options = {}) {
   const now = Date.now();
+  const bbox = detection?.boundingBox || { originX: 0, originY: 0, width: 0, height: 0 };
   const centroid = {
-    x: detection.boundingBox.originX + detection.boundingBox.width / 2,
-    y: detection.boundingBox.originY + detection.boundingBox.height / 2,
+    x: bbox.originX + bbox.width / 2,
+    y: bbox.originY + bbox.height / 2,
   };
 
   return {
@@ -81,7 +82,7 @@ function createEnhancedTrack(trackId, detection, options = {}) {
 
     // Position tracking
     centroid,
-    bbox: { ...detection.boundingBox },
+    bbox: { ...bbox },
     bboxPercent: options.bboxPercent || null,
     kalmanFilter: createKalmanFilter(centroid),
 
@@ -194,6 +195,9 @@ export function useDeduplication(options = {}) {
    * Find best matching track for a detection using geometric matching.
    */
   const findGeometricMatch = useCallback((detection, activeTracks) => {
+    // Defensive check for valid detection
+    if (!detection?.boundingBox) return null;
+    
     const detectionCentroid = {
       x: detection.boundingBox.originX + detection.boundingBox.width / 2,
       y: detection.boundingBox.originY + detection.boundingBox.height / 2,
@@ -278,8 +282,50 @@ export function useDeduplication(options = {}) {
   }, [config, faceEmbedding]);
 
   /**
+   * Normalize detection format to handle both:
+   * - MediaPipe raw format: { boundingBox: { originX, originY, width, height }, categories: [...] }
+   * - Pre-processed format from usePersonDetection: { trackId, bbox: { x, y, w, h }, confidence }
+   * 
+   * @param {object} detection - Detection in either format
+   * @param {HTMLVideoElement} videoElement - Video element for dimension conversion
+   * @returns {object|null} Normalized detection or null if invalid
+   */
+  const normalizeDetection = useCallback((detection, videoElement) => {
+    if (!detection || !videoElement) return null;
+
+    const videoWidth = videoElement.videoWidth;
+    const videoHeight = videoElement.videoHeight;
+
+    // Check if it's pre-processed format (from usePersonDetection)
+    if (detection.bbox && typeof detection.bbox.x === 'number') {
+      // Convert percentage bbox back to pixel-based boundingBox format
+      return {
+        boundingBox: {
+          originX: (detection.bbox.x / 100) * videoWidth,
+          originY: (detection.bbox.y / 100) * videoHeight,
+          width: (detection.bbox.w / 100) * videoWidth,
+          height: (detection.bbox.h / 100) * videoHeight,
+        },
+        categories: [{ score: detection.confidence || 0 }],
+        // Preserve original tracking info
+        _trackId: detection.trackId,
+        _firstSeen: detection.firstSeen,
+        _lastSeen: detection.lastSeen,
+        _dwellSeconds: detection.dwellSeconds,
+      };
+    }
+
+    // Check if it's raw MediaPipe format
+    if (detection.boundingBox && typeof detection.boundingBox.originX === 'number') {
+      return detection;
+    }
+
+    return null;
+  }, []);
+
+  /**
    * Process detections for a single frame.
-   * @param {Array} rawDetections - Raw detections from MediaPipe
+   * @param {Array} rawDetections - Detections from MediaPipe or usePersonDetection
    * @param {HTMLVideoElement} videoElement - Video element for feature extraction
    * @returns {Array} Processed detections with tracking info
    */
@@ -292,8 +338,13 @@ export function useDeduplication(options = {}) {
     const matchedTrackIds = new Set();
     const results = [];
 
+    // Normalize and filter out invalid detections
+    const normalizedDetections = (rawDetections || [])
+      .map(d => normalizeDetection(d, videoElement))
+      .filter(d => d !== null);
+
     // Remove duplicates using NMS
-    const filteredDetections = nonMaxSuppression(rawDetections, config.iouDuplicateThreshold);
+    const filteredDetections = nonMaxSuppression(normalizedDetections, config.iouDuplicateThreshold);
 
     // Get active and dormant tracks
     const activeTracks = Array.from(tracks.values())
@@ -451,11 +502,16 @@ export function useDeduplication(options = {}) {
         }
 
         if (!reIdentified) {
-          // Create new track
-          const trackId = `trk_${Date.now().toString(36)}_${Math.random().toString(36).substr(2, 5)}`;
+          // Use existing trackId if provided by usePersonDetection, otherwise generate new
+          const trackId = detection._trackId || `trk_${Date.now().toString(36)}_${Math.random().toString(36).substr(2, 5)}`;
           const newTrack = createEnhancedTrack(trackId, detection, {
             bboxPercent,
           });
+
+          // Preserve timing info if provided by usePersonDetection
+          if (detection._firstSeen) {
+            newTrack.firstSeen = detection._firstSeen;
+          }
 
           if (features.appearance) {
             newTrack.appearance = features.appearance;
@@ -482,7 +538,7 @@ export function useDeduplication(options = {}) {
 
           results.push({
             ...newTrack,
-            dwellSeconds: 0,
+            dwellSeconds: detection._dwellSeconds || 0,
           });
         }
       }
@@ -540,7 +596,7 @@ export function useDeduplication(options = {}) {
     }));
 
     return results;
-  }, [config, faceEmbedding, identityRegistry, findGeometricMatch, findDormantMatch]);
+  }, [config, faceEmbedding, identityRegistry, findGeometricMatch, findDormantMatch, normalizeDetection]);
 
   /**
    * Get all active detections with deduplication info.
