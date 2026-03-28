@@ -1,6 +1,6 @@
 /**
  * Live camera component with real webcam feed and ML detection.
- * Replaces the mock video stream with actual camera input.
+ * Includes multi-layer deduplication for accurate unique person counting.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -8,11 +8,15 @@ import {
   AlertCircle,
   Camera,
   CameraOff,
+  Fingerprint,
+  Loader2,
   MonitorPlay,
   PauseCircle,
   PlayCircle,
   RefreshCw,
   Settings,
+  Sparkles,
+  UserCheck,
   Users,
   Video,
   Zap,
@@ -24,8 +28,12 @@ import {
   DetectionState,
   useGenderClassification,
   Gender,
+  useDeduplication,
+  TrackStatus,
 } from '../hooks';
-import { sendDetectionBatch } from '../api/detection-api';
+import { useFaceEmbedding, FaceEmbeddingState } from '../hooks/use-face-embedding';
+import { ReIdMethod } from '../hooks/use-identity-registry';
+import { sendDetectionBatch, sendUnifiedDetectionBatch } from '../api/detection-api';
 
 const BATCH_INTERVAL_MS = 5000;
 const MAX_BATCH_SIZE = 50;
@@ -37,12 +45,21 @@ export default function LiveCameraView() {
 
   const [, setIsDetectionActive] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showDeduplicationStats, setShowDeduplicationStats] = useState(true);
   const [detectionLogs, setDetectionLogs] = useState([]);
   const [stats, setStats] = useState({
     totalDetections: 0,
     maleCount: 0,
     femaleCount: 0,
     unknownCount: 0,
+  });
+
+  // Deduplication hook for multi-layer person tracking
+  const deduplication = useDeduplication({
+    enableAppearance: true,
+    enableFaceEmbedding: true,
+    dormantTimeMs: 30000,
+    appearanceThreshold: 0.65,
   });
 
   const {
@@ -59,7 +76,7 @@ export default function LiveCameraView() {
   } = useCamera({ autoStart: false });
 
   const {
-    detections,
+    detections: rawDetections,
     trackCount,
     fps,
     state: detectionState,
@@ -80,8 +97,10 @@ export default function LiveCameraView() {
     const success = await startStream();
     if (success) {
       await loadGenderModel();
+      // Initialize deduplication system (loads face-api models)
+      await deduplication.initialize();
     }
-  }, [startStream, loadGenderModel]);
+  }, [startStream, loadGenderModel, deduplication]);
 
   const handleToggleDetection = useCallback(async () => {
     if (isDetecting) {
@@ -117,12 +136,27 @@ export default function LiveCameraView() {
   }, [addDetectionLog]);
 
   useEffect(() => {
-    if (!isDetecting || !detections.length || !videoRef.current) return;
+    if (!isDetecting || !rawDetections.length || !videoRef.current) return;
 
     const processDetections = async () => {
+      // Process through deduplication pipeline
+      const deduplicatedDetections = await deduplication.processFrame(
+        rawDetections,
+        videoRef.current
+      );
+
+      // Classify gender for each detection
       const classified = isClassificationReady
-        ? await classifyDetections(videoRef.current, detections)
-        : detections.map((d) => ({
+        ? await classifyDetections(videoRef.current, deduplicatedDetections.map(d => ({
+            ...d,
+            bbox: d.bboxPercent || {
+              x: (d.bbox.originX / videoRef.current.videoWidth) * 100,
+              y: (d.bbox.originY / videoRef.current.videoHeight) * 100,
+              w: (d.bbox.width / videoRef.current.videoWidth) * 100,
+              h: (d.bbox.height / videoRef.current.videoHeight) * 100,
+            },
+          })))
+        : deduplicatedDetections.map((d) => ({
             ...d,
             sex: Gender.UNKNOWN,
             sexConfidence: 0,
@@ -137,20 +171,24 @@ export default function LiveCameraView() {
         else if (detection.sex === Gender.FEMALE) newFemale++;
         else newUnknown++;
 
+        // Prepare unified detection event for backend
         batchBufferRef.current.push({
           enterprise_id: 'ent_archies_001',
           camera_id: 'cam_live_webcam',
           track_id: detection.trackId,
+          person_id: detection.personId,
           timestamp: new Date().toISOString(),
           sex: detection.sex,
           confidence_person: detection.confidence,
           confidence_sex: detection.sexConfidence || null,
-          bbox_x: detection.bbox.x,
-          bbox_y: detection.bbox.y,
-          bbox_w: detection.bbox.w,
-          bbox_h: detection.bbox.h,
+          bbox_x: detection.bboxPercent?.x ?? detection.bbox?.x,
+          bbox_y: detection.bboxPercent?.y ?? detection.bbox?.y,
+          bbox_w: detection.bboxPercent?.w ?? detection.bbox?.w,
+          bbox_h: detection.bboxPercent?.h ?? detection.bbox?.h,
           dwell_seconds: detection.dwellSeconds,
           first_seen: new Date(detection.firstSeen).toISOString(),
+          reid_method: detection.reIdMethod || 'none',
+          reid_confidence: detection.reIdConfidence || 0,
         });
       }
 
@@ -162,13 +200,14 @@ export default function LiveCameraView() {
       }));
 
       if (classified.length > 0) {
+        const uniqueCount = deduplication.stats.uniquePersons;
         const labels = classified
           .map(
             (d) =>
-              `${d.sex === Gender.MALE ? 'Male' : d.sex === Gender.FEMALE ? 'Female' : 'Unknown'}`,
+              `${d.sex === Gender.MALE ? 'Male' : d.sex === Gender.FEMALE ? 'Female' : 'Unknown'}${d.reIdMethod !== 'none' && d.reIdMethod ? ` (Re-ID: ${d.reIdMethod})` : ''}`,
           )
           .join(', ');
-        addDetectionLog(`Detected ${classified.length} person(s): ${labels}`);
+        addDetectionLog(`[${uniqueCount} unique] ${classified.length} detection(s): ${labels}`);
       }
 
       const now = Date.now();
@@ -184,12 +223,13 @@ export default function LiveCameraView() {
     processDetections();
   }, [
     isDetecting,
-    detections,
+    rawDetections,
     videoRef,
     isClassificationReady,
     classifyDetections,
     addDetectionLog,
     flushBatch,
+    deduplication,
   ]);
 
   useEffect(() => {
@@ -206,39 +246,116 @@ export default function LiveCameraView() {
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      for (const detection of detections) {
-        const { bbox, sex, sexConfidence } = detection;
-        const x = (bbox.x / 100) * canvas.width;
-        const y = (bbox.y / 100) * canvas.height;
-        const w = (bbox.w / 100) * canvas.width;
-        const h = (bbox.h / 100) * canvas.height;
+      // Get active detections from deduplication system
+      const activeDetections = deduplication.getActiveDetections();
 
+      for (const detection of activeDetections) {
+        const bbox = detection.bboxPercent || detection.bbox;
+        if (!bbox) continue;
+
+        // Handle both percentage and pixel coordinates
+        const x = bbox.x !== undefined 
+          ? (bbox.x / 100) * canvas.width 
+          : (bbox.originX / video.videoWidth) * canvas.width;
+        const y = bbox.y !== undefined 
+          ? (bbox.y / 100) * canvas.height 
+          : (bbox.originY / video.videoHeight) * canvas.height;
+        const w = bbox.w !== undefined 
+          ? (bbox.w / 100) * canvas.width 
+          : (bbox.width / video.videoWidth) * canvas.width;
+        const h = bbox.h !== undefined 
+          ? (bbox.h / 100) * canvas.height 
+          : (bbox.height / video.videoHeight) * canvas.height;
+
+        const sex = detection.sex || detection.gender || 'unknown';
+        const sexConfidence = detection.sexConfidence || detection.genderConfidence;
+
+        // Color based on gender
         const color =
-          sex === Gender.MALE
+          sex === Gender.MALE || sex === 'male'
             ? '#3B82F6'
-            : sex === Gender.FEMALE
+            : sex === Gender.FEMALE || sex === 'female'
               ? '#EC4899'
               : '#10B981';
 
+        // Re-ID indicator border color
+        const reIdMethod = detection.reIdMethod;
+        const hasReId = reIdMethod && reIdMethod !== 'none' && reIdMethod !== ReIdMethod.NONE;
+        const reIdColor = reIdMethod === ReIdMethod.FACE ? '#F59E0B' // amber for face
+          : reIdMethod === ReIdMethod.APPEARANCE ? '#8B5CF6' // purple for appearance
+          : null;
+
+        // Draw main bounding box
         ctx.strokeStyle = color;
         ctx.lineWidth = 3;
         ctx.strokeRect(x, y, w, h);
 
-        ctx.fillStyle = color;
-        ctx.fillRect(x, y - 24, Math.max(w, 80), 22);
+        // Draw re-ID indicator (corner marks) if person was re-identified
+        if (hasReId && reIdColor) {
+          ctx.strokeStyle = reIdColor;
+          ctx.lineWidth = 4;
+          const cornerSize = Math.min(w, h) * 0.15;
+          
+          // Top-left corner
+          ctx.beginPath();
+          ctx.moveTo(x, y + cornerSize);
+          ctx.lineTo(x, y);
+          ctx.lineTo(x + cornerSize, y);
+          ctx.stroke();
+          
+          // Top-right corner
+          ctx.beginPath();
+          ctx.moveTo(x + w - cornerSize, y);
+          ctx.lineTo(x + w, y);
+          ctx.lineTo(x + w, y + cornerSize);
+          ctx.stroke();
+          
+          // Bottom-left corner
+          ctx.beginPath();
+          ctx.moveTo(x, y + h - cornerSize);
+          ctx.lineTo(x, y + h);
+          ctx.lineTo(x + cornerSize, y + h);
+          ctx.stroke();
+          
+          // Bottom-right corner
+          ctx.beginPath();
+          ctx.moveTo(x + w - cornerSize, y + h);
+          ctx.lineTo(x + w, y + h);
+          ctx.lineTo(x + w, y + h - cornerSize);
+          ctx.stroke();
+        }
 
+        // Label background
+        const labelWidth = hasReId ? Math.max(w, 100) : Math.max(w, 80);
+        ctx.fillStyle = color;
+        ctx.fillRect(x, y - 24, labelWidth, 22);
+
+        // Label text
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold 12px system-ui';
-        const label =
-          sex === Gender.MALE
+        ctx.font = 'bold 11px system-ui';
+        const genderLabel =
+          sex === Gender.MALE || sex === 'male'
             ? 'Male'
-            : sex === Gender.FEMALE
+            : sex === Gender.FEMALE || sex === 'female'
               ? 'Female'
               : 'Person';
         const confidence = sexConfidence
           ? ` ${Math.round(sexConfidence * 100)}%`
           : '';
-        ctx.fillText(`${label}${confidence}`, x + 4, y - 8);
+        const reIdLabel = hasReId
+          ? ` [${reIdMethod === ReIdMethod.FACE ? 'Face' : 'Appear'}]`
+          : '';
+        ctx.fillText(`${genderLabel}${confidence}${reIdLabel}`, x + 4, y - 8);
+
+        // Person ID indicator (bottom of bbox)
+        if (detection.personId) {
+          const shortId = detection.personId.slice(-6);
+          ctx.fillStyle = 'rgba(0,0,0,0.6)';
+          ctx.fillRect(x, y + h, 60, 16);
+          ctx.fillStyle = '#FFFFFF';
+          ctx.font = '10px monospace';
+          ctx.fillText(`ID: ${shortId}`, x + 4, y + h + 12);
+        }
       }
 
       requestAnimationFrame(drawFrame);
@@ -246,7 +363,7 @@ export default function LiveCameraView() {
 
     const animationId = requestAnimationFrame(drawFrame);
     return () => cancelAnimationFrame(animationId);
-  }, [isDetecting, detections, videoRef]);
+  }, [isDetecting, deduplication, videoRef]);
 
   const renderCameraState = () => {
     if (cameraState === CameraState.IDLE) {
@@ -486,12 +603,31 @@ export default function LiveCameraView() {
                   LIVE | {streamInfo.width}x{streamInfo.height}
                 </div>
                 {isDetecting && (
-                  <div className="absolute right-3 top-3 rounded-md bg-black/55 px-2 py-1 text-[11px] font-semibold text-emerald-300">
-                    AI DETECTION ACTIVE | {fps} FPS
-                  </div>
+                  <>
+                    <div className="absolute right-3 top-3 rounded-md bg-black/55 px-2 py-1 text-[11px] font-semibold text-emerald-300">
+                      AI DETECTION ACTIVE | {fps} FPS
+                    </div>
+                    {deduplication.faceEmbeddingState === FaceEmbeddingState.LOADING && (
+                      <div className="absolute right-3 top-10 flex items-center gap-1 rounded-md bg-amber-500/80 px-2 py-1 text-[10px] font-semibold text-white">
+                        <Loader2 size={10} className="animate-spin" />
+                        Loading Face Models...
+                      </div>
+                    )}
+                  </>
                 )}
-                <div className="absolute left-3 bottom-3 rounded-md bg-black/55 px-2 py-1 text-[11px] font-semibold text-slate-100">
-                  {trackCount} person(s) tracked
+                <div className="absolute left-3 bottom-3 flex items-center gap-2">
+                  <div className="rounded-md bg-black/55 px-2 py-1 text-[11px] font-semibold text-slate-100">
+                    {deduplication.stats.activeTracks} tracked
+                  </div>
+                  <div className="rounded-md bg-emerald-600/80 px-2 py-1 text-[11px] font-semibold text-white">
+                    <UserCheck size={10} className="mr-1 inline" />
+                    {deduplication.stats.uniquePersons} unique
+                  </div>
+                  {deduplication.stats.reIdRate > 0 && (
+                    <div className="rounded-md bg-purple-600/80 px-2 py-1 text-[10px] font-semibold text-white">
+                      {Math.round(deduplication.stats.reIdRate * 100)}% re-ID
+                    </div>
+                  )}
                 </div>
               </>
             ) : (
@@ -516,7 +652,7 @@ export default function LiveCameraView() {
                 <span className="flex items-center gap-1 text-sm text-slate-600">
                   <Users size={14} /> Tracked
                 </span>
-                <strong className="text-slate-800">{trackCount}</strong>
+                <strong className="text-slate-800">{deduplication.stats.activeTracks}</strong>
               </div>
               <div className="flex items-center justify-between rounded-lg bg-blue-50 px-3 py-2">
                 <span className="text-sm text-blue-700">Male</span>
@@ -526,16 +662,105 @@ export default function LiveCameraView() {
                 <span className="text-sm text-pink-700">Female</span>
                 <strong className="text-pink-800">{stats.femaleCount}</strong>
               </div>
-              <div className="col-span-2 flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-2">
-                <span className="text-sm text-emerald-700">
-                  Total Detections
+              <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-2">
+                <span className="flex items-center gap-1 text-sm text-emerald-700">
+                  <UserCheck size={14} /> Unique
                 </span>
                 <strong className="text-emerald-800">
+                  {deduplication.stats.uniquePersons}
+                </strong>
+              </div>
+              <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+                <span className="text-sm text-slate-600">
+                  Total Events
+                </span>
+                <strong className="text-slate-800">
                   {stats.totalDetections}
                 </strong>
               </div>
             </div>
           </div>
+
+          {/* Deduplication Stats Panel */}
+          {showDeduplicationStats && (
+            <div className="rounded-xl border border-purple-200 bg-gradient-to-br from-purple-50 to-white p-4 shadow-sm">
+              <div className="mb-3 flex items-center justify-between">
+                <h4 className="flex items-center gap-1.5 text-sm font-semibold text-purple-800">
+                  <Fingerprint size={14} />
+                  Deduplication Stats
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => setShowDeduplicationStats(false)}
+                  className="text-xs text-purple-500 hover:text-purple-700"
+                >
+                  Hide
+                </button>
+              </div>
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-purple-700">Total Tracks (All Time)</span>
+                  <strong className="text-purple-900">{deduplication.stats.totalTracks}</strong>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-purple-700">Active Tracks</span>
+                  <strong className="text-purple-900">{deduplication.stats.activeTracks}</strong>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-purple-700">Dormant Tracks</span>
+                  <strong className="text-purple-900">{deduplication.stats.dormantTracks}</strong>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-purple-700">Re-ID Success Rate</span>
+                  <strong className="text-purple-900">
+                    {Math.round(deduplication.stats.reIdRate * 100)}%
+                  </strong>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-purple-700">Avg Processing Time</span>
+                  <strong className="text-purple-900">
+                    {Math.round(deduplication.stats.avgProcessingTime)}ms
+                  </strong>
+                </div>
+                {deduplication.identityStats && (
+                  <>
+                    <div className="my-2 border-t border-purple-200" />
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center gap-1 text-purple-700">
+                        <Sparkles size={12} /> Face Re-IDs
+                      </span>
+                      <strong className="text-amber-700">
+                        {deduplication.identityStats.reIdByMethod?.face || 0}
+                      </strong>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-purple-700">Appearance Re-IDs</span>
+                      <strong className="text-purple-700">
+                        {deduplication.identityStats.reIdByMethod?.appearance || 0}
+                      </strong>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-purple-700">Geometric Matches</span>
+                      <strong className="text-slate-700">
+                        {deduplication.identityStats.reIdByMethod?.geometric || 0}
+                      </strong>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {!showDeduplicationStats && (
+            <button
+              type="button"
+              onClick={() => setShowDeduplicationStats(true)}
+              className="flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-purple-300 py-2 text-xs text-purple-600 hover:bg-purple-50"
+            >
+              <Fingerprint size={12} />
+              Show Deduplication Stats
+            </button>
+          )}
 
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <h4 className="text-sm font-semibold text-slate-700">
@@ -604,6 +829,40 @@ export default function LiveCameraView() {
                   }`}
                 >
                   {isClassificationReady ? 'Ready' : 'Not loaded'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-600">Deduplication</span>
+                <span
+                  className={`font-medium ${
+                    deduplication.isInitialized
+                      ? 'text-emerald-600'
+                      : 'text-slate-400'
+                  }`}
+                >
+                  {deduplication.isInitialized ? 'Active' : 'Not initialized'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-600">Face Embedding</span>
+                <span
+                  className={`font-medium ${
+                    deduplication.faceEmbeddingState === FaceEmbeddingState.READY
+                      ? 'text-emerald-600'
+                      : deduplication.faceEmbeddingState === FaceEmbeddingState.LOADING
+                        ? 'text-amber-600'
+                        : deduplication.faceEmbeddingState === FaceEmbeddingState.ERROR
+                          ? 'text-red-600'
+                          : 'text-slate-400'
+                  }`}
+                >
+                  {deduplication.faceEmbeddingState === FaceEmbeddingState.READY
+                    ? 'Ready'
+                    : deduplication.faceEmbeddingState === FaceEmbeddingState.LOADING
+                      ? `Loading (${Math.round(deduplication.faceModelProgress * 100)}%)`
+                      : deduplication.faceEmbeddingState === FaceEmbeddingState.ERROR
+                        ? 'Error'
+                        : 'Not loaded'}
                 </span>
               </div>
             </div>
