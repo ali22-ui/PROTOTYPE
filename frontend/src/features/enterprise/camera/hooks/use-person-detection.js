@@ -43,13 +43,13 @@ const generateTrackId = () =>
 /**
  * Hook for person detection using MediaPipe.
  * @param {object} options - Configuration options
- * @param {HTMLVideoElement} options.videoElement - Video element to process
+ * @param {React.RefObject<HTMLVideoElement>} options.videoRef - Ref to video element
  * @param {number} options.confidenceThreshold - Minimum confidence for detection
  * @param {number} options.detectionIntervalMs - Milliseconds between detections
  * @returns {object} Detection state and controls
  */
 export function usePersonDetection({
-  videoElement,
+  videoRef,
   confidenceThreshold = PERSON_CONFIDENCE_THRESHOLD,
   detectionIntervalMs = DETECTION_INTERVAL_MS,
 } = {}) {
@@ -110,6 +110,9 @@ export function usePersonDetection({
    */
   const updateTracks = useCallback(
     (rawDetections, timestamp) => {
+      const videoElement = videoRef?.current;
+      if (!videoElement) return [];
+
       const tracks = tracksRef.current;
       const currentTime = Date.now();
       const matchedTrackIds = new Set();
@@ -170,7 +173,7 @@ export function usePersonDetection({
       setTrackCount(tracks.size);
       return results;
     },
-    [videoElement]
+    [videoRef]
   );
 
   /**
@@ -178,7 +181,8 @@ export function usePersonDetection({
    */
   const detectFrame = useCallback(
     (timestamp) => {
-      if (!detectorRef.current || !videoElement || videoElement.paused) {
+      const videoElement = videoRef?.current;
+      if (!detectorRef.current || !videoElement || videoElement.paused || videoElement.readyState < 2) {
         return [];
       }
 
@@ -211,13 +215,14 @@ export function usePersonDetection({
         return [];
       }
     },
-    [videoElement, detectionIntervalMs, detections, updateTracks]
+    [videoRef, detectionIntervalMs, detections, updateTracks]
   );
 
   /**
    * Start continuous detection loop.
    */
   const startDetection = useCallback(async () => {
+    const videoElement = videoRef?.current;
     if (!videoElement) {
       setError(new Error('No video element provided'));
       return false;
@@ -232,14 +237,13 @@ export function usePersonDetection({
     fpsCounterRef.current = { frames: 0, lastTime: Date.now() };
 
     const loop = (timestamp) => {
-      if (!isRunning) return;
       detectFrame(timestamp);
       animationFrameRef.current = requestAnimationFrame(loop);
     };
 
     animationFrameRef.current = requestAnimationFrame(loop);
     return true;
-  }, [videoElement, loadModel, detectFrame, isRunning]);
+  }, [videoRef, loadModel, detectFrame]);
 
   /**
    * Stop detection loop.
@@ -273,6 +277,7 @@ export function usePersonDetection({
   }, []);
 
   useEffect(() => {
+    const videoElement = videoRef?.current;
     if (isRunning && videoElement && !videoElement.paused) {
       const loop = (timestamp) => {
         detectFrame(timestamp);
@@ -286,7 +291,7 @@ export function usePersonDetection({
         }
       };
     }
-  }, [isRunning, videoElement, detectFrame]);
+  }, [isRunning, videoRef, detectFrame]);
 
   return {
     state,

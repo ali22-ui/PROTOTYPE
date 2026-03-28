@@ -47,6 +47,7 @@ export function useCamera({
   const [state, setState] = useState(CameraState.IDLE);
   const [error, setError] = useState(null);
   const [devices, setDevices] = useState([]);
+  const [stream, setStream] = useState(null);
   const [selectedDeviceId, setSelectedDeviceId] = useState(() => {
     if (typeof localStorage !== 'undefined') {
       return localStorage.getItem(CAMERA_STORAGE_KEY) || '';
@@ -94,10 +95,9 @@ export function useCamera({
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
+    setStream(null);
     setStreamInfo({ width: 0, height: 0, frameRate: 0 });
+    setState(CameraState.IDLE);
   }, []);
 
   const startStream = useCallback(
@@ -108,7 +108,11 @@ export function useCamera({
         return false;
       }
 
-      stopStream();
+      // Stop existing stream first
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+      }
+
       setState(CameraState.REQUESTING);
       setError(null);
 
@@ -121,14 +125,11 @@ export function useCamera({
           audio: false,
         };
 
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
-        streamRef.current = stream;
+        const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+        streamRef.current = newStream;
+        setStream(newStream);
 
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
-
-        const videoTrack = stream.getVideoTracks()[0];
+        const videoTrack = newStream.getVideoTracks()[0];
         const settings = videoTrack.getSettings();
         setStreamInfo({
           width: settings.width || 0,
@@ -173,7 +174,6 @@ export function useCamera({
     },
     [
       selectedDeviceId,
-      stopStream,
       getResolutionConstraints,
       enumerateDevices,
     ]
@@ -190,6 +190,16 @@ export function useCamera({
   const requestPermission = useCallback(async () => {
     return startStream();
   }, [startStream]);
+
+  // Attach stream to video element when both are available
+  useEffect(() => {
+    if (videoRef.current && stream) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.play().catch((err) => {
+        console.error('Error playing video:', err);
+      });
+    }
+  }, [stream]);
 
   useEffect(() => {
     enumerateDevices();
@@ -217,14 +227,14 @@ export function useCamera({
 
   return {
     videoRef,
-    stream: streamRef.current,
+    stream,
     state,
     error,
     devices,
     selectedDeviceId,
     streamInfo,
     isSupported: isCameraSupported(),
-    isStreaming: state === CameraState.GRANTED && streamRef.current !== null,
+    isStreaming: state === CameraState.GRANTED && stream !== null,
     startStream,
     stopStream,
     switchCamera,

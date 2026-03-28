@@ -67,7 +67,7 @@ export default function LiveCameraView() {
     startDetection,
     stopDetection,
   } = usePersonDetection({
-    videoElement: videoRef.current,
+    videoRef,
   });
 
   const {
@@ -469,15 +469,16 @@ export default function LiveCameraView() {
           </div>
 
           <div className="relative h-[430px] overflow-hidden rounded-lg border border-slate-300 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-700">
+            {/* Video element is always rendered but hidden when not streaming */}
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className={`absolute inset-0 h-full w-full object-cover ${isStreaming ? 'block' : 'hidden'}`}
+            />
             {isStreaming ? (
               <>
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="absolute inset-0 h-full w-full object-cover"
-                />
                 <canvas
                   ref={canvasRef}
                   className="absolute inset-0 h-full w-full object-cover"
