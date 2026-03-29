@@ -1,28 +1,44 @@
 /**
  * Camera monitoring page with mode selection.
- * Allows switching between live webcam feed and demo mock stream.
+ * Allows switching between live webcam feed, mobile IP camera, and demo mock stream.
  */
 import { useState } from 'react';
-import { MonitorPlay, Video } from 'lucide-react';
+import { MonitorPlay, Smartphone, Video } from 'lucide-react';
 import CameraView from './camera-view';
 import LiveCameraView from './live-camera-view';
+import IPCameraView from './ip-camera-view';
 
 const CAMERA_MODE_KEY = 'lgu-dashboard-camera-mode';
 
 const CameraMode = {
   LIVE: 'live',
+  IP_WEBCAM: 'ip_webcam',
   DEMO: 'demo',
 };
 
 export default function CameraPage() {
   const [mode, setMode] = useState(() => {
     const saved = localStorage.getItem(CAMERA_MODE_KEY);
-    return saved === CameraMode.LIVE ? CameraMode.LIVE : CameraMode.DEMO;
+    if (saved === CameraMode.LIVE) return CameraMode.LIVE;
+    if (saved === CameraMode.IP_WEBCAM) return CameraMode.IP_WEBCAM;
+    return CameraMode.DEMO;
   });
 
   const handleModeChange = (newMode) => {
     setMode(newMode);
     localStorage.setItem(CAMERA_MODE_KEY, newMode);
+  };
+
+  const getModeDescription = () => {
+    switch (mode) {
+      case CameraMode.LIVE:
+        return 'Using your webcam for real-time person detection';
+      case CameraMode.IP_WEBCAM:
+        return 'Streaming from mobile IP Webcam with real-time detection';
+      case CameraMode.DEMO:
+      default:
+        return 'Viewing simulated CCTV feed with mock detections';
+    }
   };
 
   return (
@@ -33,9 +49,7 @@ export default function CameraPage() {
             Camera Monitoring
           </h2>
           <p className="text-sm text-slate-500">
-            {mode === CameraMode.LIVE
-              ? 'Using your webcam for real-time person detection'
-              : 'Viewing simulated CCTV feed with mock detections'}
+            {getModeDescription()}
           </p>
         </div>
         <div className="flex items-center gap-2 rounded-lg border border-slate-200 p-1">
@@ -53,6 +67,18 @@ export default function CameraPage() {
           </button>
           <button
             type="button"
+            onClick={() => handleModeChange(CameraMode.IP_WEBCAM)}
+            className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+              mode === CameraMode.IP_WEBCAM
+                ? 'bg-violet-600 text-white'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <Smartphone size={16} />
+            Mobile IP Camera
+          </button>
+          <button
+            type="button"
             onClick={() => handleModeChange(CameraMode.DEMO)}
             className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
               mode === CameraMode.DEMO
@@ -66,7 +92,9 @@ export default function CameraPage() {
         </div>
       </div>
 
-      {mode === CameraMode.LIVE ? <LiveCameraView /> : <CameraView />}
+      {mode === CameraMode.LIVE && <LiveCameraView />}
+      {mode === CameraMode.IP_WEBCAM && <IPCameraView />}
+      {mode === CameraMode.DEMO && <CameraView />}
     </div>
   );
 }

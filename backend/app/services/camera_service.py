@@ -1,11 +1,19 @@
 import asyncio
 from datetime import datetime
 import random
+from typing import Generator
 
 from fastapi import WebSocket
 from fastapi import WebSocketDisconnect
 
+from app.core.config import CameraSourceMode, get_settings
 from app.repositories import enterprise_repository
+from app.services.ip_camera_service import (
+    get_ip_camera_service,
+    IPCameraHealth,
+    SourceState,
+    SourceStatus,
+)
 from app.state import runtime_store
 from domain_exceptions import DomainNotFoundError
 
@@ -98,11 +106,26 @@ def get_enterprise_camera_stream(enterprise_id: str):
     camera_runtime = runtime_store.get_camera_runtime()
     latest = camera_runtime[resolved_id].get("latest_frame")
     if latest:
-        return latest
+        return _enrich_frame_with_source(resolved_id, latest)
 
     frame = _build_camera_frame(resolved_id)
     camera_runtime[resolved_id]["latest_frame"] = frame
-    return frame
+    return _enrich_frame_with_source(resolved_id, frame)
+
+
+def _enrich_frame_with_source(enterprise_id: str, frame: dict) -> dict:
+    """Add source mode information to frame response."""
+    ip_service = get_ip_camera_service()
+    state = ip_service.get_source_state(enterprise_id)
+
+    return {
+        **frame,
+        "source_mode": state.mode,
+        "is_live_camera": state.mode in ("live_webcam", "ip_webcam"),
+        "relay_url": state.relay_url,
+        "source_status": state.health.status.value if state.health else "unknown",
+        "last_frame_at": state.last_frame_at.isoformat() if state.last_frame_at else None,
+    }
 
 
 async def ws_enterprise_camera_stream(websocket: WebSocket, enterprise_id: str):
@@ -139,3 +162,74 @@ def get_enterprise_recommendations(enterprise_id: str):
         "enterprise_id": enterprise_repository.resolve_enterprise_id(enterprise_id),
         "recommendations": enterprise_repository.list_recommendations(),
     }
+
+
+def get_camera_source(enterprise_id: str) -> dict:
+    """Get current camera source configuration and health."""
+    resolved_id = enterprise_repository.resolve_enterprise_id(enterprise_id)
+    if not enterprise_repository.get_enterprise_account(resolved_id):
+        raise DomainNotFoundError("Enterprise account not found")
+
+    ip_service = get_ip_camera_service()
+    state = ip_service.get_source_state(resolved_id)
+
+    # Perform health check if mode is ip_webcam
+    if state.mode == "ip_webcam":
+        ip_service.check_health(resolved_id)
+
+    settings = get_settings()
+
+    return {
+        "enterprise_id": resolved_id,
+        "source_mode": state.mode,
+        "is_live_camera": state.mode in ("live_webcam", "ip_webcam"),
+        "relay_url": state.relay_url,
+        "health": {
+            "reachable": state.health.reachable,
+            "status": state.health.status.value,
+            "last_error": state.health.last_error,
+            "last_ok_at": state.health.last_ok_at.isoformat() if state.health.last_ok_at else None,
+            "latency_ms": state.health.latency_ms,
+        },
+        "config": {
+            "ip_webcam_enabled": settings.ip_webcam_enabled,
+            "ip_webcam_base_url": settings.ip_webcam_base_url,
+            "ip_webcam_video_path": settings.ip_webcam_video_path,
+        },
+    }
+
+
+def set_camera_source(enterprise_id: str, mode: CameraSourceMode) -> dict:
+    """Set the camera source mode for an enterprise."""
+    resolved_id = enterprise_repository.resolve_enterprise_id(enterprise_id)
+    if not enterprise_repository.get_enterprise_account(resolved_id):
+        raise DomainNotFoundError("Enterprise account not found")
+
+    ip_service = get_ip_camera_service()
+    state = ip_service.set_source_mode(resolved_id, mode)
+
+    # Check health immediately if switching to ip_webcam
+    if mode == "ip_webcam":
+        ip_service.check_health(resolved_id)
+
+    return {
+        "enterprise_id": resolved_id,
+        "source_mode": state.mode,
+        "is_live_camera": state.mode in ("live_webcam", "ip_webcam"),
+        "relay_url": state.relay_url,
+        "health": {
+            "reachable": state.health.reachable,
+            "status": state.health.status.value,
+            "last_error": state.health.last_error,
+        },
+    }
+
+
+def stream_camera_relay(enterprise_id: str) -> Generator[bytes, None, None]:
+    """Stream MJPEG relay for IP webcam."""
+    resolved_id = enterprise_repository.resolve_enterprise_id(enterprise_id)
+    if not enterprise_repository.get_enterprise_account(resolved_id):
+        raise DomainNotFoundError("Enterprise account not found")
+
+    ip_service = get_ip_camera_service()
+    yield from ip_service.stream_mjpeg(resolved_id)
