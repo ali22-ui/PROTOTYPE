@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import {
   Building2,
@@ -21,6 +22,15 @@ const navLinks = [
 ];
 
 export default function DashboardLayout({ onLogout }) {
+  useEffect(() => {
+    const previousTitle = document.title;
+    document.title = 'LGU PORTAL';
+
+    return () => {
+      document.title = previousTitle;
+    };
+  }, []);
+
   return (
     <div className="min-h-screen bg-[#edf2f7]">
       <div className="grid min-h-screen grid-cols-[236px_1fr]">

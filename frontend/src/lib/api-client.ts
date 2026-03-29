@@ -4,6 +4,24 @@ const api = axios.create({
   baseURL: `${import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'}/api`,
 });
 
+type ApiResponseLike<T> = {
+  data: T;
+  status: number;
+  headers: unknown;
+  config: unknown;
+};
+
+const hasDataProperty = <T>(value: unknown): value is ApiResponseLike<T> => {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'data' in value &&
+    'status' in value &&
+    'headers' in value &&
+    'config' in value
+  );
+};
+
 export const getApiBaseUrl = (): string => import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 
 export const getSelectedEnterpriseId = (): string =>
@@ -20,11 +38,16 @@ export const getCameraWebSocketUrl = (
 };
 
 export const withFallback = async <T>(
-  request: () => Promise<T>,
+  request: () => Promise<T | ApiResponseLike<T>>,
   fallback: T,
 ): Promise<T> => {
   try {
-    return await request();
+    const result = await request();
+    if (hasDataProperty<T>(result)) {
+      return result.data;
+    }
+
+    return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.warn('API unavailable, using fallback data:', message);

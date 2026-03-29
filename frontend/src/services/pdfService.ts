@@ -10,6 +10,9 @@ export interface FilledPdfResult {
 const DEBUG_MODE = true;
 const DEBUG_MARKER_SIZE = 4;
 
+const ensureTrailingSlash = (value: string): string =>
+  value.endsWith('/') ? value : `${value}/`;
+
 const normalizeTemplatePath = (filePath: string): string => {
   const withoutLeadingSlash = filePath.replace(/^\/+/, '');
   const withoutPdfPrefix = withoutLeadingSlash.replace(/^pdf\//i, '');
@@ -18,7 +21,13 @@ const normalizeTemplatePath = (filePath: string): string => {
     .map((segment) => encodeURIComponent(segment))
     .join('/');
 
-  return `/pdf/${encoded}`;
+  return `pdf/${encoded}`;
+};
+
+const resolveTemplateUrl = (filePath: string): string => {
+  const baseUrl = ensureTrailingSlash(import.meta.env.BASE_URL || '/');
+  const normalizedTemplatePath = normalizeTemplatePath(filePath);
+  return `${baseUrl}${normalizedTemplatePath}`;
 };
 
 const toRenderableText = (value: unknown): string => {
@@ -38,7 +47,7 @@ const toRenderableText = (value: unknown): string => {
 };
 
 export const loadTemplate = async (filePath: string): Promise<ArrayBuffer> => {
-  const templateUrl = normalizeTemplatePath(filePath);
+  const templateUrl = resolveTemplateUrl(filePath);
   const response = await fetch(templateUrl);
 
   if (!response.ok) {
