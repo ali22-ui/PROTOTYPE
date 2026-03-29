@@ -41,6 +41,11 @@ jobs:
           VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
         run: npm run build -- --base /PROTOTYPE/
 
+      - name: Add SPA fallback for deep links
+        run: |
+          cp dist/index.html dist/404.html
+          touch dist/.nojekyll
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
