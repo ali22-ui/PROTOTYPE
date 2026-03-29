@@ -1,8 +1,13 @@
 from functools import lru_cache
-from typing import Any
+from ipaddress import ip_address
+from typing import Literal
+from urllib.parse import urlparse
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+CameraSourceMode = Literal["mock", "live_webcam", "ip_webcam"]
 
 
 class Settings(BaseSettings):
@@ -21,6 +26,15 @@ class Settings(BaseSettings):
 
     # Data Retention Settings
     detection_retention_days: int = 30
+
+    # IP Webcam Configuration
+    camera_source_mode: CameraSourceMode = "mock"
+    ip_webcam_enabled: bool = True
+    ip_webcam_base_url: str = "http://192.168.1.4:8080"
+    ip_webcam_video_path: str = "/video"
+    ip_webcam_snapshot_path: str = "/shot.jpg"
+    ip_webcam_connect_timeout_seconds: float = 5.0
+    ip_webcam_read_timeout_seconds: float = 10.0
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -58,6 +72,34 @@ class Settings(BaseSettings):
             and not self.supabase_service_role_key.startswith("your_")
             and len(self.supabase_service_role_key) > 50  # Real keys are much longer
         )
+
+    @property
+    def ip_webcam_video_url(self) -> str:
+        """Build full URL for video stream endpoint."""
+        base = self.ip_webcam_base_url.rstrip("/")
+        path = self.ip_webcam_video_path if self.ip_webcam_video_path.startswith("/") else f"/{self.ip_webcam_video_path}"
+        return f"{base}{path}"
+
+    @property
+    def ip_webcam_snapshot_url(self) -> str:
+        """Build full URL for snapshot endpoint."""
+        base = self.ip_webcam_base_url.rstrip("/")
+        path = self.ip_webcam_snapshot_path if self.ip_webcam_snapshot_path.startswith("/") else f"/{self.ip_webcam_snapshot_path}"
+        return f"{base}{path}"
+
+    def is_ip_webcam_url_safe(self, url: str) -> bool:
+        """Validate URL is in private network range (SSRF prevention)."""
+        try:
+            parsed = urlparse(url)
+            host = parsed.hostname
+            if not host:
+                return False
+            # Allow private IPv4 ranges
+            ip = ip_address(host)
+            return ip.is_private and not ip.is_loopback
+        except ValueError:
+            # Hostname not an IP - could be local DNS name, allow if it resolves to private
+            return host in ("localhost",) or host.endswith(".local")
 
 
 @lru_cache(maxsize=1)

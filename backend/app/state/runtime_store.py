@@ -1,6 +1,10 @@
 from copy import deepcopy
+from typing import TYPE_CHECKING
 
 from app.domain import core_runtime as core
+
+if TYPE_CHECKING:
+    from app.services.ip_camera_service import SourceState
 
 
 # Runtime state must be owned by the state layer, not by shared module globals.
@@ -11,6 +15,7 @@ CAMERA_BROADCAST_TASKS = {}
 LGU_REPORT_PACKS = []
 AUTHORITY_PACKAGES = {}
 ENTERPRISE_ACTION_LOGS = []
+CAMERA_SOURCE_STATES: dict[str, "SourceState"] = {}
 
 
 def reset_runtime_state() -> None:
@@ -30,6 +35,7 @@ def reset_runtime_state() -> None:
 
     AUTHORITY_PACKAGES.clear()
     ENTERPRISE_ACTION_LOGS.clear()
+    CAMERA_SOURCE_STATES.clear()
 
 
 def get_camera_runtime():
@@ -58,6 +64,10 @@ def get_authority_packages():
 
 def get_enterprise_action_logs():
     return ENTERPRISE_ACTION_LOGS
+
+
+def get_camera_source_states():
+    return CAMERA_SOURCE_STATES
 
 
 reset_runtime_state()
