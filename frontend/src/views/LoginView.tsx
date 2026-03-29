@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Building2, KeyRound } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { login } from '@/services/api';
 import type { User } from '@/types';
 
@@ -56,6 +56,12 @@ export default function LoginView({ onLogin }: LoginViewProps): JSX.Element {
         <section className="bg-white p-8 md:p-10">
           <h2 className="text-2xl font-bold text-slate-900">Login</h2>
           <p className="mt-1 text-sm text-slate-500">Secure access to enterprise analytics and LGU report workflows.</p>
+          <p className="mt-2 text-xs text-slate-500">
+            LGU Admin?{' '}
+            <Link to="/login" className="font-semibold text-primary-700 hover:underline">
+              Go to LGU Login
+            </Link>
+          </p>
 
           <form onSubmit={handleSubmit} className="mt-6 space-y-5">
             <label className="block">

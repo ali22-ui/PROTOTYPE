@@ -70,6 +70,17 @@ export default function LoginForm({ onLogin }) {
             </Link>
             .
           </p>
+
+          <p className="mt-2 text-center text-sm text-slate-600">
+            Enterprise user?{' '}
+            <Link
+              to="/enterprise/login"
+              className="font-semibold text-primary-600 hover:underline"
+            >
+              Go to Enterprise Login
+            </Link>
+            .
+          </p>
         </form>
       </div>
     </div>
