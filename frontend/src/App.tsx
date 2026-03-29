@@ -155,5 +155,5 @@ export default function App(): JSX.Element {
 
   return isGitHubPagesHost
     ? <HashRouter>{appRoutes}</HashRouter>
-    : <BrowserRouter basename={import.meta.env.BASE_URL}>{appRoutes}</BrowserRouter>;
+    : <BrowserRouter>{appRoutes}</BrowserRouter>;
 }
