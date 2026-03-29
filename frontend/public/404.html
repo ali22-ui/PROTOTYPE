@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Redirecting...</title>
+    <script>
+      (function redirectToSpaHashRoute() {
+        var pathSegments = window.location.pathname.split('/').filter(Boolean);
+        if (!pathSegments.length) {
+          return;
+        }
+
+        var repoSegment = pathSegments[0];
+        var routePath = '/' + pathSegments.slice(1).join('/');
+        var hashPath = routePath === '/' ? '/' : routePath;
+        var target = '/' + repoSegment + '/#' + hashPath;
+
+        if (window.location.search) {
+          target += window.location.search;
+        }
+
+        window.location.replace(target);
+      })();
+    </script>
+  </head>
+  <body>
+    Redirecting...
+  </body>
+</html>
