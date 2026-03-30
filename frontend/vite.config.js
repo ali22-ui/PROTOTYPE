@@ -22,8 +22,8 @@ const copyPdfTemplatesPlugin = () => ({
   },
 });
 
-export default defineConfig(({ mode }) => ({
-  base: mode === 'production' ? '/PROTOTYPE/' : '/',
+export default defineConfig(() => ({
+  base: '/',
   plugins: [react(), copyPdfTemplatesPlugin()],
   resolve: {
     alias: {
