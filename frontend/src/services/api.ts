@@ -34,7 +34,6 @@ const SESSION_USER_KEY = 'enterprise-session-user';
 const LEGACY_ENTERPRISE_ID_KEY = 'enterprise-account-id';
 const LEGACY_ENTERPRISE_NAME_KEY = 'enterprise-account-name';
 const ACCOUNT_SETTINGS_STORAGE_PREFIX = 'enterprise-account-settings-v1';
-const FALLBACK_BEARER_TOKEN = 'frontend-audit-token';
 
 const WEEKDAY_LABELS: DashboardWeeklyAreaPoint['day'][] = [
   'Sun',
@@ -91,7 +90,7 @@ export const sanitizeForTransport = <T>(value: T): T => {
   return value;
 };
 
-const resolveBearerToken = (): string => {
+const resolveBearerToken = (): string | null => {
   const enterpriseToken = sessionStorage.getItem(ENTERPRISE_SESSION_TOKEN_KEY);
   if (enterpriseToken) {
     return enterpriseToken;
@@ -102,12 +101,17 @@ const resolveBearerToken = (): string => {
     return lguToken;
   }
 
-  return FALLBACK_BEARER_TOKEN;
+  return null;
 };
 
 http.interceptors.request.use((config) => {
+  const token = resolveBearerToken();
   const headers = AxiosHeaders.from(config.headers);
-  headers.set('Authorization', `Bearer ${resolveBearerToken()}`);
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  } else {
+    headers.delete('Authorization');
+  }
   config.headers = headers;
 
   if (config.params) {
