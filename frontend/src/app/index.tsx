@@ -21,6 +21,8 @@ export default function App(): JSX.Element {
   );
 
   const isGitHubPagesHost = globalThis.location.hostname.endsWith('github.io');
+  const routerBasename =
+    (import.meta.env.BASE_URL || '/').replace(/\/+$/, '') || '/';
 
   const hasLguSession =
     isLguAuthenticated ||
@@ -80,6 +82,6 @@ export default function App(): JSX.Element {
   return isGitHubPagesHost ? (
     <HashRouter>{routeContent}</HashRouter>
   ) : (
-    <BrowserRouter>{routeContent}</BrowserRouter>
+    <BrowserRouter basename={routerBasename}>{routeContent}</BrowserRouter>
   );
 }

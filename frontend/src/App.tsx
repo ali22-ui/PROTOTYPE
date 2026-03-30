@@ -1,5 +1,11 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { BrowserRouter, HashRouter, Navigate, Route, Routes } from 'react-router-dom';
+import {
+  BrowserRouter,
+  HashRouter,
+  Navigate,
+  Route,
+  Routes,
+} from 'react-router-dom';
 import EnterpriseShell from '@/components/layout/EnterpriseShell';
 import ProtectedRoute from '@/components/layout/ProtectedRoute';
 import {
@@ -18,11 +24,15 @@ import CameraMonitoringView from '@/views/enterprise/CameraMonitoringView';
 import DashboardView from '@/views/enterprise/DashboardView';
 import ReportCenterView from '@/views/enterprise/ReportCenterView';
 
-const LguLoginView = lazy(() => import('@/features/lgu/master/components/LguLoginView'));
+const LguLoginView = lazy(
+  () => import('@/features/lgu/master/components/LguLoginView'),
+);
 const LguSidebarLayout = lazy(
   () => import('@/features/lgu/master/components/LguSidebarLayout'),
 );
-const LguOverviewView = lazy(() => import('@/features/lgu/master/views/OverviewView'));
+const LguOverviewView = lazy(
+  () => import('@/features/lgu/master/views/OverviewView'),
+);
 const LguMapView = lazy(() => import('@/features/lgu/master/views/MapView'));
 const LguEnterpriseManagementView = lazy(
   () => import('@/features/lgu/master/views/EnterpriseManagementView'),
@@ -33,7 +43,9 @@ const LguEnterpriseLogsView = lazy(
 const LguReportsWorkspaceView = lazy(
   () => import('@/features/lgu/master/views/ReportsWorkspaceView'),
 );
-const LguSettingsView = lazy(() => import('@/features/lgu/master/views/SettingsView'));
+const LguSettingsView = lazy(
+  () => import('@/features/lgu/master/views/SettingsView'),
+);
 
 export default function App(): JSX.Element {
   const [user, setUser] = useState<User | null>(() => getStoredUser());
@@ -44,9 +56,12 @@ export default function App(): JSX.Element {
     () => localStorage.getItem('lgu-auth-user') || 'LGU Admin',
   );
   const isGitHubPagesHost = globalThis.location.hostname.endsWith('github.io');
-  const hasLguSession = isLguAuthenticated
-    || localStorage.getItem('lgu-auth') === 'true'
-    || Boolean(sessionStorage.getItem(LGU_SESSION_TOKEN_KEY));
+  const routerBasename =
+    (import.meta.env.BASE_URL || '/').replace(/\/+$/, '') || '/';
+  const hasLguSession =
+    isLguAuthenticated ||
+    localStorage.getItem('lgu-auth') === 'true' ||
+    Boolean(sessionStorage.getItem(LGU_SESSION_TOKEN_KEY));
   const hasEnterpriseSession = Boolean(
     user?.token && sessionStorage.getItem(ENTERPRISE_SESSION_TOKEN_KEY),
   );
@@ -84,11 +99,11 @@ export default function App(): JSX.Element {
 
   const appRoutes = (
     <Suspense
-      fallback={(
+      fallback={
         <div className="grid min-h-screen place-items-center bg-white text-slate-700">
           Loading portal...
         </div>
-      )}
+      }
     >
       <Routes>
         <Route
@@ -138,12 +153,18 @@ export default function App(): JSX.Element {
           <Route path="settings" element={<LguSettingsView />} />
         </Route>
 
-        <Route path="/app/*" element={<Navigate to="/lgu/overview" replace />} />
+        <Route
+          path="/app/*"
+          element={<Navigate to="/lgu/overview" replace />}
+        />
 
         <Route
           path="/enterprise"
           element={
-            <ProtectedRoute isAllowed={hasEnterpriseSession} redirectTo="/enterprise/login">
+            <ProtectedRoute
+              isAllowed={hasEnterpriseSession}
+              redirectTo="/enterprise/login"
+            >
               <EnterpriseShell user={user as User} onLogout={handleLogout} />
             </ProtectedRoute>
           }
@@ -176,7 +197,9 @@ export default function App(): JSX.Element {
     </Suspense>
   );
 
-  return isGitHubPagesHost
-    ? <HashRouter>{appRoutes}</HashRouter>
-    : <BrowserRouter>{appRoutes}</BrowserRouter>;
+  return isGitHubPagesHost ? (
+    <HashRouter>{appRoutes}</HashRouter>
+  ) : (
+    <BrowserRouter basename={routerBasename}>{appRoutes}</BrowserRouter>
+  );
 }
