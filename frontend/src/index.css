@@ -1,6 +1,24 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+
+@theme {
+  --color-brand-dark: #346739;
+  --color-brand-mid: #79ae6f;
+  --color-brand-light: #9fcb98;
+  --color-brand-cream: #f2edc2;
+
+  --color-primary-50: #eef4ff;
+  --color-primary-100: #dbe8ff;
+  --color-primary-500: #1e3a8a;
+  --color-primary-600: #1d4ed8;
+  --color-primary-700: #1e40af;
+  --color-primary-900: #0b1f52;
+
+  --color-accent-50: #fffbea;
+  --color-accent-100: #fff3c6;
+  --color-accent-400: #f6c847;
+  --color-accent-500: #f4b400;
+  --color-accent-600: #dca200;
+}
 
 html,
 body,
@@ -11,7 +29,15 @@ body,
 
 body {
   margin: 0;
-  font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  font-family:
+    'Inter',
+    system-ui,
+    -apple-system,
+    Segoe UI,
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
   line-height: 1.45;
   text-rendering: optimizeLegibility;
 }

@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -22,9 +23,9 @@ const copyPdfTemplatesPlugin = () => ({
   },
 });
 
-export default defineConfig(({ mode }) => ({
-  base: mode === 'production' ? '/PROTOTYPE/' : '/',
-  plugins: [react(), copyPdfTemplatesPlugin()],
+export default defineConfig(() => ({
+  base: '/',
+  plugins: [tailwindcss(), react(), copyPdfTemplatesPlugin()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
