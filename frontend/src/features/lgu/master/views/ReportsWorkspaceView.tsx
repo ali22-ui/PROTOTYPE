@@ -12,38 +12,10 @@ import type { LguAuthorityPackage, LguReportPack } from '@/types';
 
 const PRINTED_REPORT_STORAGE_KEY = 'lgu-printed-reports-v1';
 
-interface TemplateRecord {
-  id: string;
-  title: string;
-  description: string;
-  format: 'PDF' | 'DOCX';
-}
-
 interface BarangayReportGroup {
   barangay: string;
   reports: LguReportPack[];
 }
-
-const templateRecords: TemplateRecord[] = [
-  {
-    id: 'tpl-traffic-summary',
-    title: 'Monthly Traffic Summary Template',
-    description: 'Aggregate visitors/tourists, hotspot barangays, and compliance notes.',
-    format: 'PDF',
-  },
-  {
-    id: 'tpl-demographics',
-    title: 'Demographics Narrative Template',
-    description: 'Foreign vs local narrative and trend commentary for internal memos.',
-    format: 'DOCX',
-  },
-  {
-    id: 'tpl-dot-ready',
-    title: 'DOT Submission Prep Packet',
-    description: 'LGU-only staging packet for eventual DOT filing and printing.',
-    format: 'PDF',
-  },
-];
 
 const triggerBrowserDownload = (blob: Blob, filename: string): void => {
   const objectUrl = URL.createObjectURL(blob);
@@ -278,22 +250,30 @@ export default function ReportsWorkspaceView(): JSX.Element {
         <article className="rounded-2xl border border-brand-light/70 bg-white p-4 shadow-sm">
           <p className="text-xs uppercase tracking-wide text-slate-500">Aggregated Files</p>
           <p className="mt-2 text-3xl font-black text-brand-dark">{reportPacks.length}</p>
+          <p className="mt-1 text-sm text-slate-500">Total enterprise reports compiled.</p>
         </article>
         <article className="rounded-2xl border border-brand-light/70 bg-white p-4 shadow-sm">
-          <p className="text-xs uppercase tracking-wide text-slate-500">Generated Packages</p>
+          <p className="text-xs uppercase tracking-wide text-slate-500">Generated Reports</p>
           <p className="mt-2 text-3xl font-black text-blue-700">{generatedCount}</p>
+          <p className="mt-1 text-sm text-slate-500">Reports ready for internal review.</p>
         </article>
         <article className="rounded-2xl border border-brand-light/70 bg-white p-4 shadow-sm">
           <p className="text-xs uppercase tracking-wide text-slate-500">Printed</p>
           <p className="mt-2 text-3xl font-black text-emerald-700">{printedCount}</p>
+          <p className="mt-1 text-sm text-slate-500">Physical copies logged.</p>
         </article>
       </section>
 
-      <section className="grid min-h-full gap-4 xl:grid-cols-[1.2fr_1.8fr]">
-        <aside className="grid gap-4">
-          <article className="rounded-2xl border border-brand-light/70 bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="text-base font-bold text-brand-dark">Template Library</h3>
+      <section className="grid min-h-full items-stretch gap-4 xl:grid-cols-[1.2fr_1.8fr]">
+        <aside className="grid">
+          <article className="flex h-full flex-col rounded-2xl border border-brand-light/70 bg-white p-4 shadow-sm">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h3 className="text-base font-bold text-brand-dark">Aggregated Report Files</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Review and manage monthly report files submitted by enterprises across all barangays.
+                </p>
+              </div>
               <input
                 type="month"
                 value={period}
@@ -301,24 +281,7 @@ export default function ReportsWorkspaceView(): JSX.Element {
                 className="rounded-lg border border-slate-300 px-2 py-1 text-xs"
               />
             </div>
-            <div className="mt-3 space-y-2">
-              {templateRecords.map((template) => (
-                <article key={template.id} className="rounded-xl border border-brand-light/70 bg-brand-cream p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-semibold text-brand-dark">{template.title}</p>
-                    <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-700">
-                      {template.format}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs text-slate-600">{template.description}</p>
-                </article>
-              ))}
-            </div>
-          </article>
-
-          <article className="rounded-2xl border border-brand-light/70 bg-white p-4 shadow-sm">
-            <h3 className="text-base font-bold text-brand-dark">Aggregated Report Files</h3>
-            <div className="mt-3 max-h-[360px] space-y-2 overflow-y-auto pr-1">
+            <div className="mt-3 max-h-none flex-1 space-y-2 overflow-y-auto pr-1">
               {groupedReportPacks.map((group) => {
                 const isExpanded = expandedBarangays.includes(group.barangay);
 

@@ -40,6 +40,8 @@ body {
     sans-serif;
   line-height: 1.45;
   text-rendering: optimizeLegibility;
+  background-color: #EEEEEE;
+  color: #1F2937;
 }
 
 * {

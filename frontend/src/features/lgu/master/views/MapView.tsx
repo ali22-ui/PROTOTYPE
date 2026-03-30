@@ -17,6 +17,7 @@ import {
   SAN_PEDRO_MAP_BOUNDS,
   SAN_PEDRO_MAP_CENTER,
 } from '@/features/lgu/master/config/mapConfig';
+import EnterpriseDetailsModal from '@/features/lgu/master/components/EnterpriseDetailsModal';
 import type {
   LguBarangay,
   LguBarangaysResponse,
@@ -71,7 +72,7 @@ export default function MapView(): JSX.Element {
   const [analyticsByEnterprise, setAnalyticsByEnterprise] = useState<
     Record<number, LguEnterpriseAnalyticsDetail>
   >({});
-  const [expandedEnterpriseId, setExpandedEnterpriseId] = useState<number | null>(null);
+  const [selectedEnterpriseId, setSelectedEnterpriseId] = useState<number | null>(null);
   const [isLoadingEnterprises, setIsLoadingEnterprises] = useState<boolean>(false);
 
   useEffect(() => {
@@ -100,6 +101,14 @@ export default function MapView(): JSX.Element {
     return getTunedMarkerCenter(selectedBarangay);
   }, [selectedBarangay]);
 
+  const selectedEnterprise = useMemo<LguEnterpriseNode | null>(() => {
+    if (!selectedEnterpriseId) {
+      return null;
+    }
+
+    return enterprises.find((enterprise) => enterprise.id === selectedEnterpriseId) ?? null;
+  }, [enterprises, selectedEnterpriseId]);
+
   useEffect(() => {
     if (!selectedBarangayName) {
       return;
@@ -109,12 +118,12 @@ export default function MapView(): JSX.Element {
       setIsLoadingEnterprises(true);
       const payload = await fetchBarangayEnterpriseNodes(selectedBarangayName);
       setEnterprises(payload.enterprises);
-      setExpandedEnterpriseId((current) => {
+      setSelectedEnterpriseId((current) => {
         if (current && payload.enterprises.some((enterprise) => enterprise.id === current)) {
           return current;
         }
 
-        return payload.enterprises[0]?.id ?? null;
+        return null;
       });
 
       const summaries = await Promise.all(
@@ -132,14 +141,14 @@ export default function MapView(): JSX.Element {
       console.error('Failed to load selected barangay enterprises:', error);
       setEnterprises([]);
       setAnalyticsByEnterprise({});
-      setExpandedEnterpriseId(null);
+      setSelectedEnterpriseId(null);
       setIsLoadingEnterprises(false);
     });
   }, [selectedBarangayName]);
 
   return (
-    <div className="grid min-h-full gap-4 xl:grid-cols-[1.65fr_1fr]">
-      <section className="grid min-h-full rounded-2xl border border-brand-light/70 bg-white p-4 shadow-sm">
+    <div className="grid h-[calc(100vh-10.25rem)] min-h-[620px] gap-4 overflow-hidden lg:grid-cols-[1.65fr_1fr]">
+      <section className="flex h-full min-h-0 flex-col rounded-2xl border border-brand-light/70 bg-white p-4 shadow-sm">
         <div>
           <h3 className="text-lg font-bold text-brand-dark">
             San Pedro City Barangay Intelligence Map
@@ -149,7 +158,7 @@ export default function MapView(): JSX.Element {
           </p>
         </div>
 
-        <div className="mt-3 min-h-[620px] overflow-hidden rounded-2xl border border-brand-light/70">
+        <div className="relative z-[400] mt-3 min-h-0 flex-1 overflow-hidden rounded-2xl border border-brand-light/70">
           <MapContainer
             center={SAN_PEDRO_MAP_CENTER}
             zoom={13.1}
@@ -201,20 +210,37 @@ export default function MapView(): JSX.Element {
         </div>
       </section>
 
-      <aside className="grid min-h-full gap-4">
+      <aside className="flex h-full min-h-0 flex-col gap-4">
         <section className="rounded-2xl border border-brand-light/70 bg-white p-4 shadow-sm">
           <h4 className="text-sm font-bold uppercase tracking-wide text-brand-dark">Selected Barangay</h4>
-          <p className="mt-1 text-lg font-bold text-brand-dark">
-            {selectedBarangay?.name || 'Select a barangay'}
-          </p>
-          <p className="mt-1 text-xs text-slate-600">
+          <div className="mt-3">
+            <label htmlFor="barangay-select" className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+              Choose Barangay
+            </label>
+            <select
+              id="barangay-select"
+              value={selectedBarangayName}
+              onChange={(event) => setSelectedBarangayName(event.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-brand-dark focus:border-brand-dark focus:outline-none"
+            >
+              <option value="" disabled>
+                Select a barangay
+              </option>
+              {mapPayload.barangays.map((barangay) => (
+                <option key={barangay.id} value={barangay.name}>
+                  {barangay.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <p className="mt-2 text-xs text-slate-600">
             {selectedBarangay
               ? `${selectedBarangay.enterpriseCount} registered enterprise account(s)`
-              : 'Click a barangay in the map to view linked enterprise nodes.'}
+              : 'Select a barangay from the dropdown or click a map marker to view linked enterprise nodes.'}
           </p>
         </section>
 
-        <section className="rounded-2xl border border-brand-light/70 bg-white p-4 shadow-sm">
+        <section className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-brand-light/70 bg-white p-4 shadow-sm">
           <h4 className="text-sm font-bold uppercase tracking-wide text-brand-dark">
             Enterprises in {selectedBarangay?.name || 'Barangay'}
           </h4>
@@ -222,145 +248,84 @@ export default function MapView(): JSX.Element {
           {isLoadingEnterprises ? (
             <p className="mt-3 text-sm text-slate-600">Loading enterprise records...</p>
           ) : (
-            <div className="mt-3 max-h-[320px] space-y-2 overflow-y-auto pr-1">
-              {enterprises.map((enterprise) => {
-                const summary = analyticsByEnterprise[enterprise.id];
-                const complianceStatus = toComplianceStatus(enterprise.status);
-                const isExpanded = expandedEnterpriseId === enterprise.id;
+            <div className="mt-3 flex-1 overflow-y-auto p-2 pr-1">
+              <div className="space-y-2 pb-2">
+                {enterprises.map((enterprise) => {
+                  const summary = analyticsByEnterprise[enterprise.id];
+                  const complianceStatus = toComplianceStatus(enterprise.status);
+                  const isSelectedEnterprise = selectedEnterpriseId === enterprise.id;
 
-                return (
-                  <article
-                    key={enterprise.id}
-                    className="rounded-xl border border-brand-light/70 bg-brand-cream p-3"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setExpandedEnterpriseId((current) =>
-                          current === enterprise.id ? null : enterprise.id,
-                        );
-                      }}
-                      className="w-full text-left"
+                  return (
+                    <article
+                      key={enterprise.id}
+                      className={`rounded-xl border border-brand-light/70 bg-white p-3 ${
+                        isSelectedEnterprise ? 'ring-2 ring-brand-mid/40' : ''
+                      }`}
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <p className="text-sm font-semibold text-brand-dark">{enterprise.name}</p>
-                          <p className="text-xs text-slate-600">
-                            {enterprise.barangay} • {enterprise.type}
-                          </p>
-                        </div>
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                            complianceStatus === 'Active'
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : 'bg-amber-100 text-amber-700'
-                          }`}
-                        >
-                          {complianceStatus}
-                        </span>
-                      </div>
-
-                      <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-700">
-                        <div className="rounded-lg bg-white px-2 py-1.5">
-                          <p className="text-slate-500">Monthly Visitors</p>
-                          <p className="font-semibold text-brand-dark">
-                            {(summary?.monthlyVisitors ?? 0).toLocaleString()}
-                          </p>
-                        </div>
-                        <div className="rounded-lg bg-white px-2 py-1.5">
-                          <p className="text-slate-500">Top Segment</p>
-                          <p className="font-semibold text-brand-dark">{summary?.topDemographic ?? 'N/A'}</p>
-                        </div>
-                      </div>
-
-                      <p className={`mt-2 text-[11px] font-semibold ${trendColor(summary?.trendDirection ?? 'FLAT')}`}>
-                        Trend: {summary?.trendDirection ?? 'FLAT'}
-                      </p>
-                      <p className="mt-1 text-[11px] text-slate-500">
-                        {isExpanded ? 'Click to collapse deep stats' : 'Click to expand deep stats'}
-                      </p>
-                    </button>
-
-                    {isExpanded ? (
-                      summary ? (
-                        <div className="mt-3 rounded-lg border border-brand-light/70 bg-white p-2.5 text-[11px] text-slate-700">
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="rounded-md bg-brand-cream px-2 py-1.5">
-                              <p className="text-slate-500">Total Tourists</p>
-                              <p className="font-semibold text-brand-dark">
-                                {summary.totalTourists.toLocaleString()}
-                              </p>
-                            </div>
-                            <div className="rounded-md bg-brand-cream px-2 py-1.5">
-                              <p className="text-slate-500">Local / Non-Local</p>
-                              <p className="font-semibold text-brand-dark">
-                                {summary.localResidents.toLocaleString()} / {summary.nonLocalResidents.toLocaleString()}
-                              </p>
-                            </div>
-                            <div className="rounded-md bg-brand-cream px-2 py-1.5">
-                              <p className="text-slate-500">Male Ratio</p>
-                              <p className="font-semibold text-brand-dark">{summary.maleRatioPct}%</p>
-                            </div>
-                            <div className="rounded-md bg-brand-cream px-2 py-1.5">
-                              <p className="text-slate-500">Female Ratio</p>
-                              <p className="font-semibold text-brand-dark">{summary.femaleRatioPct}%</p>
-                            </div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedEnterpriseId(enterprise.id)}
+                        className="w-full text-left"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-semibold text-brand-dark">{enterprise.name}</p>
+                            <p className="text-xs text-slate-600">
+                              {enterprise.barangay} • {enterprise.type}
+                            </p>
                           </div>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                              complianceStatus === 'Active'
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : 'bg-amber-100 text-amber-700'
+                            }`}
+                          >
+                            {complianceStatus}
+                          </span>
+                        </div>
 
-                          <div className="mt-2 rounded-md border border-brand-light/60 bg-brand-cream/70 px-2 py-2">
-                            <p className="font-semibold text-brand-dark">Visitor Demographics</p>
-                            <ul className="mt-1 space-y-0.5">
-                              {summary.demographics.map((entry) => (
-                                <li key={`${enterprise.id}-${entry.name}`} className="flex items-center justify-between gap-2">
-                                  <span>{entry.name}</span>
-                                  <span className="font-semibold text-brand-dark">{entry.value.toLocaleString()}</span>
-                                </li>
-                              ))}
-                            </ul>
+                        <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-700">
+                          <div className="rounded-lg bg-white px-2 py-1.5">
+                            <p className="text-slate-500">Monthly Visitors</p>
+                            <p className="font-semibold text-brand-dark">
+                              {(summary?.monthlyVisitors ?? 0).toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="rounded-lg bg-white px-2 py-1.5">
+                            <p className="text-slate-500">Top Segment</p>
+                            <p className="font-semibold text-brand-dark">{summary?.topDemographic ?? 'N/A'}</p>
                           </div>
                         </div>
-                      ) : (
-                        <p className="mt-2 rounded-md bg-white px-2 py-1.5 text-[11px] text-slate-600">
-                          Loading deep stats...
-                        </p>
-                      )
-                    ) : null}
-                  </article>
-                );
-              })}
 
-              {!enterprises.length ? (
-                <p className="rounded-xl border border-brand-light/70 bg-brand-cream px-3 py-2 text-xs text-slate-600">
-                  No enterprise nodes currently linked to this barangay.
-                </p>
-              ) : null}
+                        <div className="mt-2 flex items-center justify-between gap-2">
+                          <p className={`text-[11px] font-semibold ${trendColor(summary?.trendDirection ?? 'FLAT')}`}>
+                            Trend: {summary?.trendDirection ?? 'FLAT'}
+                          </p>
+                          <p className="text-[11px] font-semibold text-brand-dark">Click to view full stats</p>
+                        </div>
+                      </button>
+                    </article>
+                  );
+                })}
+
+                {!enterprises.length ? (
+                  <p className="rounded-xl border border-brand-light/70 bg-brand-cream px-3 py-2 text-xs text-slate-600">
+                    No enterprise nodes currently linked to this barangay.
+                  </p>
+                ) : null}
+              </div>
             </div>
           )}
         </section>
 
-        <section className="rounded-2xl border border-brand-light/70 bg-white p-4 shadow-sm">
-          <h4 className="text-sm font-bold uppercase tracking-wide text-brand-dark">Barangay Directory (27)</h4>
-          <div className="mt-3 max-h-[280px] space-y-1.5 overflow-y-auto pr-1">
-            {mapPayload.barangays.map((barangay) => (
-              <button
-                key={barangay.id}
-                type="button"
-                onClick={() => setSelectedBarangayName(barangay.name)}
-                className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition ${
-                  selectedBarangayName === barangay.name
-                    ? 'border-brand-dark bg-brand-light/40 text-brand-dark'
-                    : 'border-slate-200 bg-white text-slate-700 hover:bg-brand-cream'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium">{barangay.name}</span>
-                  <span className="text-[11px] text-slate-500">{barangay.enterpriseCount}</span>
-                </div>
-              </button>
-            ))}
-          </div>
-        </section>
       </aside>
+
+      <EnterpriseDetailsModal
+        enterprise={selectedEnterprise}
+        analytics={selectedEnterprise ? analyticsByEnterprise[selectedEnterprise.id] ?? null : null}
+        onClose={() => setSelectedEnterpriseId(null)}
+      />
     </div>
   );
 }

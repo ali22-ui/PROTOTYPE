@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ShieldCheck } from 'lucide-react';
 
@@ -11,6 +11,15 @@ export default function LguLoginView({ onLogin }: LguLoginViewProps): JSX.Elemen
   const [username, setUsername] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const lguLogoUrl = `${import.meta.env.BASE_URL}San_Pedro_City.png`;
+
+  useEffect(() => {
+    const previousTitle = document.title;
+    document.title = 'LGU Portal';
+
+    return () => {
+      document.title = previousTitle;
+    };
+  }, []);
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
@@ -34,9 +43,7 @@ export default function LguLoginView({ onLogin }: LguLoginViewProps): JSX.Elemen
               </span>
             </div>
             <h1 className="text-3xl font-black leading-tight tracking-tight">
-              LGU MASTER
-              <br />
-              PORTAL
+              LGU Portal
             </h1>
             <p className="mt-2 text-sm text-brand-cream/90">
               San Pedro City, Laguna 4023

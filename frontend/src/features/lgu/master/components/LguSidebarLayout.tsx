@@ -53,7 +53,7 @@ export default function LguSidebarLayout({
 
   useEffect(() => {
     const previousTitle = document.title;
-    document.title = 'LGU PORTAL';
+    document.title = 'LGU Portal';
 
     return () => {
       document.title = previousTitle;
@@ -61,11 +61,11 @@ export default function LguSidebarLayout({
   }, []);
 
   const currentTitle = useMemo<string>(() => {
-    return routeTitleMap[location.pathname] || 'LGU Master Portal';
+    return routeTitleMap[location.pathname] || 'LGU Portal';
   }, [location.pathname]);
 
   return (
-    <div className="min-h-screen bg-white text-brand-dark">
+    <div className="min-h-screen bg-brand-bg text-brand-dark">
       <div className="grid min-h-screen grid-cols-[280px_1fr]">
         <aside className="sticky top-0 flex h-screen flex-col border-r border-brand-light/60 bg-brand-dark px-3 py-4 text-brand-cream shadow-xl">
           <div className="rounded-2xl border border-brand-light/40 bg-brand-mid/20 px-4 py-4">
@@ -79,7 +79,7 @@ export default function LguSidebarLayout({
                 <p className="text-[11px] uppercase tracking-[0.18em] text-brand-cream/80">
                   San Pedro City
                 </p>
-                <h1 className="mt-1 text-xl font-black leading-tight tracking-tight">LGU PORTAL</h1>
+                <h1 className="mt-1 text-xl font-black leading-tight tracking-tight">LGU Portal</h1>
                 <p className="mt-1 text-xs text-brand-cream/80">Master Admin Dashboard • Laguna 4023</p>
               </div>
             </div>
@@ -117,23 +117,25 @@ export default function LguSidebarLayout({
           </nav>
         </aside>
 
-        <main className="flex min-h-screen flex-col bg-white">
+        <main className="min-h-screen flex-1 bg-brand-bg">
+          <div className="flex min-h-screen flex-col">
           <header className="border-b border-brand-light/60 bg-white/85 px-6 py-4 backdrop-blur">
             <div className="flex items-center justify-between gap-4">
               <div>
                 <h2 className="text-2xl font-bold tracking-tight text-brand-dark">{currentTitle}</h2>
-                <p className="text-sm text-slate-600">City-wide LGU oversight for all connected enterprises</p>
+                <p className="text-sm text-slate-700">City-wide LGU oversight for all connected enterprises</p>
               </div>
-              <div className="rounded-xl border border-brand-light bg-brand-cream px-3 py-2 text-right">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500">Signed in as</p>
+              <div className="rounded-xl border border-brand-light bg-white px-3 py-2 text-right">
+                <p className="text-[11px] uppercase tracking-wide text-slate-600">Signed in as</p>
                 <p className="text-sm font-semibold text-brand-dark">{adminUsername || 'LGU Admin'}</p>
               </div>
             </div>
           </header>
 
-          <section className="grid flex-1 bg-white p-5">
+          <section className="grid flex-1 bg-brand-bg p-5">
             <Outlet />
           </section>
+          </div>
         </main>
       </div>
     </div>

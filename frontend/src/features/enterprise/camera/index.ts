@@ -5,4 +5,5 @@ export { default as CameraPage } from './components/camera-page';
 export * from './api/get-camera-stream';
 export * from './api/detection-api';
 export * from './hooks';
+export * from './context/CameraContext';
 export * from './types';

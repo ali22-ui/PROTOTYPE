@@ -1,28 +1,21 @@
 /**
- * Live camera component with real webcam feed and ML detection.
- * Includes multi-layer deduplication for accurate unique person counting.
+ * Live camera component with webcam feed and AI detection.
+ * Optimized for compact enterprise monitoring layout and accurate canvas overlay rendering.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Activity,
   AlertCircle,
   Camera,
   CameraOff,
-  Fingerprint,
   Loader2,
   MonitorPlay,
   PauseCircle,
   PlayCircle,
   RefreshCw,
-  Settings,
-  Sparkles,
   UserCheck,
-  Users,
-  Video,
   Zap,
 } from 'lucide-react';
 import {
-  useCamera,
   CameraState,
   usePersonDetection,
   DetectionState,
@@ -30,6 +23,7 @@ import {
   Gender,
   useDeduplication,
 } from '../hooks';
+import { useGlobalCamera } from '../context/CameraContext';
 import { FaceEmbeddingState } from '../hooks/use-face-embedding';
 import { ReIdMethod } from '../hooks/use-identity-registry';
 import { sendDetectionBatch } from '../api/detection-api';
@@ -38,6 +32,8 @@ import type { EnhancedTrack } from '../hooks/use-deduplication';
 
 const BATCH_INTERVAL_MS = 5000;
 const MAX_BATCH_SIZE = 50;
+const BRAND_DARK = '#5C6F2B';
+const BRAND_ACCENT = '#DE802B';
 
 type OverlayDetection = EnhancedTrack & {
   sex?: 'male' | 'female' | 'unknown';
@@ -51,13 +47,14 @@ interface LiveCameraViewProps {
 }
 
 export default function LiveCameraView({ compactLayout = false }: LiveCameraViewProps): JSX.Element {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const previewRef = useRef<HTMLDivElement | null>(null);
+  const autoInitRef = useRef(false);
   const batchBufferRef = useRef<DetectionBatchEvent[]>([]);
   const lastBatchTimeRef = useRef(Date.now());
 
   const [, setIsDetectionActive] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showDeduplicationStats, setShowDeduplicationStats] = useState(true);
   const [detectionLogs, setDetectionLogs] = useState<string[]>([]);
   const [stats, setStats] = useState({
     totalDetections: 0,
@@ -66,7 +63,6 @@ export default function LiveCameraView({ compactLayout = false }: LiveCameraView
     unknownCount: 0,
   });
 
-  // Deduplication hook for multi-layer person tracking
   const deduplication = useDeduplication({
     enableAppearance: true,
     enableFaceEmbedding: true,
@@ -75,17 +71,14 @@ export default function LiveCameraView({ compactLayout = false }: LiveCameraView
   });
 
   const {
-    videoRef,
+    stream,
     state: cameraState,
     error: cameraError,
-    devices,
-    selectedDeviceId,
     streamInfo,
-    isStreaming,
-    startStream,
-    stopStream,
-    switchCamera,
-  } = useCamera({ autoStart: false });
+    isCameraRunning: isStreaming,
+    startCamera,
+    stopCamera,
+  } = useGlobalCamera();
 
   const {
     detections: rawDetections,
@@ -104,14 +97,55 @@ export default function LiveCameraView({ compactLayout = false }: LiveCameraView
     isReady: isClassificationReady,
   } = useGenderClassification();
 
+  useEffect(() => {
+    const videoElement = videoRef.current;
+    if (!videoElement) {
+      return;
+    }
+
+    if (stream) {
+      if (videoElement.srcObject !== stream) {
+        videoElement.srcObject = stream;
+      }
+      void videoElement.play().catch(() => {
+        // Ignore auto-play race conditions while route transitions happen.
+      });
+      return;
+    }
+
+    videoElement.srcObject = null;
+  }, [stream]);
+
   const handleStartCamera = useCallback(async (): Promise<void> => {
-    const success = await startStream();
+    const success = await startCamera();
     if (success) {
       await loadGenderModel();
-      // Initialize deduplication system (loads face-api models)
       await deduplication.initialize();
     }
-  }, [startStream, loadGenderModel, deduplication]);
+  }, [startCamera, loadGenderModel, deduplication]);
+
+  useEffect(() => {
+    if (!isStreaming) {
+      autoInitRef.current = false;
+      return;
+    }
+
+    if (autoInitRef.current) {
+      return;
+    }
+
+    autoInitRef.current = true;
+
+    void (async (): Promise<void> => {
+      if (!isClassificationReady) {
+        await loadGenderModel();
+      }
+
+      if (!deduplication.isInitialized) {
+        await deduplication.initialize();
+      }
+    })();
+  }, [isStreaming, isClassificationReady, loadGenderModel, deduplication]);
 
   const handleToggleDetection = useCallback(async (): Promise<void> => {
     if (isDetecting) {
@@ -125,10 +159,7 @@ export default function LiveCameraView({ compactLayout = false }: LiveCameraView
 
   const addDetectionLog = useCallback((message: string): void => {
     const timestamp = new Date().toLocaleTimeString();
-    setDetectionLogs((prev) => [
-      `[${timestamp}] ${message}`,
-      ...prev.slice(0, 99),
-    ]);
+    setDetectionLogs((prev) => [`[${timestamp}] ${message}`, ...prev.slice(0, 99)]);
   }, []);
 
   const flushBatch = useCallback(async (): Promise<void> => {
@@ -141,7 +172,6 @@ export default function LiveCameraView({ compactLayout = false }: LiveCameraView
       await sendDetectionBatch(batch);
       addDetectionLog(`Sent batch of ${batch.length} detections to server`);
     } catch (err: unknown) {
-      console.error('Failed to send detection batch:', err);
       const message = err instanceof Error ? err.message : 'Unknown error';
       addDetectionLog(`Failed to send batch: ${message}`);
     }
@@ -154,11 +184,7 @@ export default function LiveCameraView({ compactLayout = false }: LiveCameraView
       const videoElement = videoRef.current;
       if (!videoElement) return;
 
-      // Process through deduplication pipeline
-      const deduplicatedDetections = await deduplication.processFrame(
-        rawDetections,
-        videoElement,
-      );
+      const deduplicatedDetections = await deduplication.processFrame(rawDetections, videoElement);
 
       const detectionForClassification = deduplicatedDetections.map((detection) => ({
         ...detection,
@@ -171,7 +197,6 @@ export default function LiveCameraView({ compactLayout = false }: LiveCameraView
         },
       }));
 
-      // Classify gender for each detection
       const classified = isClassificationReady
         ? await classifyDetections(videoElement, detectionForClassification)
         : detectionForClassification.map((detection) => ({
@@ -192,7 +217,6 @@ export default function LiveCameraView({ compactLayout = false }: LiveCameraView
         else if (detection.sex === Gender.FEMALE) newFemale += 1;
         else newUnknown += 1;
 
-        // Prepare unified detection event for backend
         batchBufferRef.current.push({
           enterprise_id: 'ent_archies_001',
           camera_id: 'cam_live_webcam',
@@ -223,12 +247,13 @@ export default function LiveCameraView({ compactLayout = false }: LiveCameraView
       if (classified.length > 0) {
         const uniqueCount = deduplication.stats.uniquePersons;
         const labels = classified
-          .map(
-            (d) =>
-              `${d.sex === Gender.MALE ? 'Male' : d.sex === Gender.FEMALE ? 'Female' : 'Unknown'}${
-                d.reIdMethod !== 'none' && d.reIdMethod ? ` (Re-ID: ${d.reIdMethod})` : ''
-              }`,
-          )
+          .map((detection) => (
+            detection.sex === Gender.MALE
+              ? 'Male'
+              : detection.sex === Gender.FEMALE
+                ? 'Female'
+                : 'Unknown'
+          ))
           .join(', ');
         addDetectionLog(`[${uniqueCount} unique] ${classified.length} detection(s): ${labels}`);
       }
@@ -258,154 +283,150 @@ export default function LiveCameraView({ compactLayout = false }: LiveCameraView
   useEffect(() => {
     const canvas = canvasRef.current;
     const video = videoRef.current;
-    if (!canvas || !video || !isDetecting) return;
+    const preview = previewRef.current;
+
+    if (!canvas || !video || !preview || !isDetecting) return undefined;
 
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    if (!ctx) return undefined;
 
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
+    let animationFrameId = 0;
 
     const drawFrame = (): void => {
       if (!isDetecting) return;
 
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const containerW = video.offsetWidth || preview.clientWidth;
+      const containerH = video.offsetHeight || preview.clientHeight;
+      if (!containerW || !containerH) {
+        animationFrameId = requestAnimationFrame(drawFrame);
+        return;
+      }
 
-      // Get active detections from deduplication system
+      const dpr = window.devicePixelRatio || 1;
+      const targetWidth = Math.max(1, Math.floor(containerW * dpr));
+      const targetHeight = Math.max(1, Math.floor(containerH * dpr));
+
+      if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+      }
+
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, containerW, containerH);
+
+      const videoW = video.videoWidth || 1;
+      const videoH = video.videoHeight || 1;
+      const scale = Math.min(containerW / videoW, containerH / videoH);
+      const renderedW = videoW * scale;
+      const renderedH = videoH * scale;
+      const offsetX = (containerW - renderedW) / 2;
+      const offsetY = (containerH - renderedH) / 2;
+
       const activeDetections = deduplication.getActiveDetections() as OverlayDetection[];
 
       for (const detection of activeDetections) {
         const bbox = detection.bboxPercent || detection.bbox;
         if (!bbox) continue;
 
-        // Handle both percentage and pixel coordinates
-        const x = 'x' in bbox
-          ? (bbox.x / 100) * canvas.width
-          : (bbox.originX / (video.videoWidth || 1)) * canvas.width;
-        const y = 'y' in bbox
-          ? (bbox.y / 100) * canvas.height
-          : (bbox.originY / (video.videoHeight || 1)) * canvas.height;
-        const w = 'w' in bbox
-          ? (bbox.w / 100) * canvas.width
-          : (bbox.width / (video.videoWidth || 1)) * canvas.width;
-        const h = 'h' in bbox
-          ? (bbox.h / 100) * canvas.height
-          : (bbox.height / (video.videoHeight || 1)) * canvas.height;
+        const boxX = 'x' in bbox ? (bbox.x / 100) * videoW : bbox.originX;
+        const boxY = 'y' in bbox ? (bbox.y / 100) * videoH : bbox.originY;
+        const boxW = 'w' in bbox ? (bbox.w / 100) * videoW : bbox.width;
+        const boxH = 'h' in bbox ? (bbox.h / 100) * videoH : bbox.height;
 
-        const sex = detection.sex || detection.gender || 'unknown';
-        const sexConfidence = detection.sexConfidence || detection.genderConfidence;
+        const x = offsetX + boxX * scale;
+        const y = offsetY + boxY * scale;
+        const w = boxW * scale;
+        const h = boxH * scale;
 
-        // Color based on gender
-        const color =
-          sex === Gender.MALE || sex === 'male'
-            ? '#3B82F6'
-            : sex === Gender.FEMALE || sex === 'female'
-              ? '#EC4899'
-              : '#10B981';
+        if (w <= 1 || h <= 1) continue;
 
-        // Re-ID indicator border color
-        const reIdMethod = detection.reIdMethod;
-        const hasReId = reIdMethod && reIdMethod !== ReIdMethod.NONE;
-        const reIdColor = reIdMethod === ReIdMethod.FACE
-          ? '#F59E0B' // amber for face
-          : reIdMethod === ReIdMethod.APPEARANCE
-            ? '#8B5CF6' // purple for appearance
-            : null;
+        const sex = detection.sex || detection.gender || Gender.UNKNOWN;
+        const isMale = sex === Gender.MALE || sex === 'male';
+        const isFemale = sex === Gender.FEMALE || sex === 'female';
+        const strokeColor = isMale ? BRAND_DARK : isFemale ? BRAND_ACCENT : BRAND_DARK;
 
-        // Draw main bounding box
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 3;
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 2.5;
         ctx.strokeRect(x, y, w, h);
 
-        // Draw re-ID indicator (corner marks) if person was re-identified
-        if (hasReId && reIdColor) {
-          ctx.strokeStyle = reIdColor;
-          ctx.lineWidth = 4;
-          const cornerSize = Math.min(w, h) * 0.15;
+        const hasReId = detection.reIdMethod && detection.reIdMethod !== ReIdMethod.NONE;
+        if (hasReId) {
+          const corner = Math.min(w, h) * 0.14;
+          ctx.strokeStyle = BRAND_ACCENT;
+          ctx.lineWidth = 3;
 
-          // Top-left corner
           ctx.beginPath();
-          ctx.moveTo(x, y + cornerSize);
+          ctx.moveTo(x, y + corner);
           ctx.lineTo(x, y);
-          ctx.lineTo(x + cornerSize, y);
+          ctx.lineTo(x + corner, y);
           ctx.stroke();
 
-          // Top-right corner
           ctx.beginPath();
-          ctx.moveTo(x + w - cornerSize, y);
+          ctx.moveTo(x + w - corner, y);
           ctx.lineTo(x + w, y);
-          ctx.lineTo(x + w, y + cornerSize);
+          ctx.lineTo(x + w, y + corner);
           ctx.stroke();
 
-          // Bottom-left corner
           ctx.beginPath();
-          ctx.moveTo(x, y + h - cornerSize);
+          ctx.moveTo(x, y + h - corner);
           ctx.lineTo(x, y + h);
-          ctx.lineTo(x + cornerSize, y + h);
+          ctx.lineTo(x + corner, y + h);
           ctx.stroke();
 
-          // Bottom-right corner
           ctx.beginPath();
-          ctx.moveTo(x + w - cornerSize, y + h);
+          ctx.moveTo(x + w - corner, y + h);
           ctx.lineTo(x + w, y + h);
-          ctx.lineTo(x + w, y + h - cornerSize);
+          ctx.lineTo(x + w, y + h - corner);
           ctx.stroke();
         }
 
-        // Label background
-        const labelWidth = hasReId ? Math.max(w, 100) : Math.max(w, 80);
-        ctx.fillStyle = color;
-        ctx.fillRect(x, y - 24, labelWidth, 22);
+        const confidence = detection.sexConfidence || detection.genderConfidence;
+        const label = `${isMale ? 'Male' : isFemale ? 'Female' : 'Person'}${
+          confidence ? ` ${Math.round(confidence * 100)}%` : ''
+        }`;
 
-        // Label text
+        ctx.fillStyle = strokeColor;
+        ctx.fillRect(x, Math.max(0, y - 24), Math.max(86, w * 0.5), 20);
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold 11px system-ui';
-        const genderLabel =
-          sex === Gender.MALE || sex === 'male'
-            ? 'Male'
-            : sex === Gender.FEMALE || sex === 'female'
-              ? 'Female'
-              : 'Person';
-        const confidence = sexConfidence
-          ? ` ${Math.round(sexConfidence * 100)}%`
-          : '';
-        const reIdLabel = hasReId
-          ? ` [${reIdMethod === ReIdMethod.FACE ? 'Face' : 'Appear'}]`
-          : '';
-        ctx.fillText(`${genderLabel}${confidence}${reIdLabel}`, x + 4, y - 8);
+        ctx.font = 'bold 11px Inter, system-ui, sans-serif';
+        ctx.fillText(label, x + 6, Math.max(12, y - 10));
 
-        // Person ID indicator (bottom of bbox)
         if (detection.personId) {
           const shortId = detection.personId.slice(-6);
-          ctx.fillStyle = 'rgba(0,0,0,0.6)';
-          ctx.fillRect(x, y + h, 60, 16);
+          ctx.fillStyle = 'rgba(0,0,0,0.58)';
+          ctx.fillRect(x, y + h, 72, 16);
           ctx.fillStyle = '#FFFFFF';
           ctx.font = '10px monospace';
-          ctx.fillText(`ID: ${shortId}`, x + 4, y + h + 12);
+          ctx.fillText(`ID:${shortId}`, x + 5, y + h + 12);
         }
       }
 
-      requestAnimationFrame(drawFrame);
+      animationFrameId = requestAnimationFrame(drawFrame);
     };
 
-    const animationId = requestAnimationFrame(drawFrame);
-    return () => cancelAnimationFrame(animationId);
+    animationFrameId = requestAnimationFrame(drawFrame);
+
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    };
   }, [isDetecting, deduplication, videoRef]);
 
   const renderCameraState = (): JSX.Element | null => {
     if (cameraState === CameraState.IDLE) {
       return (
-        <div className="flex h-full flex-col items-center justify-center gap-4 text-slate-500">
-          <Camera size={64} className="opacity-50" />
-          <p className="text-lg font-medium">Camera not started</p>
+        <div className="flex h-full flex-col items-center justify-center gap-4 text-brand-dark/70">
+          <Camera size={58} className="opacity-60" />
+          <p className="text-base font-semibold text-brand-dark">Camera not started</p>
           <button
             type="button"
             onClick={() => {
               void handleStartCamera();
             }}
-            className="flex items-center gap-2 rounded-lg bg-emerald-600 px-6 py-3 font-semibold text-white hover:bg-emerald-700"
+            className="flex items-center gap-2 rounded-lg bg-brand-dark px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-dark/90"
           >
-            <PlayCircle size={20} />
+            <PlayCircle size={18} />
             Start Camera
           </button>
         </div>
@@ -414,97 +435,48 @@ export default function LiveCameraView({ compactLayout = false }: LiveCameraView
 
     if (cameraState === CameraState.REQUESTING) {
       return (
-        <div className="flex h-full flex-col items-center justify-center gap-4 text-slate-500">
-          <RefreshCw size={48} className="animate-spin opacity-50" />
-          <p className="text-lg font-medium">Requesting camera access...</p>
-          <p className="text-sm">Please allow camera access in your browser</p>
+        <div className="flex h-full flex-col items-center justify-center gap-3 text-brand-dark/70">
+          <Loader2 size={46} className="animate-spin" />
+          <p className="text-sm font-medium">Requesting camera access...</p>
         </div>
       );
     }
 
     if (cameraState === CameraState.DENIED) {
       return (
-        <div className="flex h-full flex-col items-center justify-center gap-4 text-red-500">
-          <CameraOff size={64} className="opacity-70" />
-          <p className="text-lg font-medium">Camera access denied</p>
-          <p className="max-w-md text-center text-sm text-slate-600">
-            To use real-time detection, please enable camera access in your
-            browser settings and refresh the page.
-          </p>
+        <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-brand-dark">
+          <CameraOff size={56} className="text-brand-accent" />
+          <p className="text-sm font-semibold">Camera access denied</p>
           <button
             type="button"
             onClick={() => window.location.reload()}
-            className="flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            className="flex items-center gap-2 rounded-lg border border-brand-mid/70 bg-white px-4 py-2 text-xs font-semibold text-brand-dark hover:bg-brand-bg"
           >
-            <RefreshCw size={16} />
+            <RefreshCw size={14} />
             Refresh Page
           </button>
         </div>
       );
     }
 
-    if (cameraState === CameraState.NOT_FOUND) {
+    if (
+      cameraState === CameraState.NOT_FOUND
+      || cameraState === CameraState.IN_USE
+      || cameraState === CameraState.NOT_SUPPORTED
+      || cameraState === CameraState.ERROR
+    ) {
       return (
-        <div className="flex h-full flex-col items-center justify-center gap-4 text-amber-600">
-          <AlertCircle size={64} className="opacity-70" />
-          <p className="text-lg font-medium">No camera found</p>
-          <p className="max-w-md text-center text-sm text-slate-600">
-            Please connect a webcam or enable your built-in camera and try
-            again.
-          </p>
+        <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-brand-dark">
+          <AlertCircle size={56} className="text-brand-accent" />
+          <p className="text-sm font-semibold">{cameraError?.message || 'Camera unavailable'}</p>
           <button
             type="button"
             onClick={() => {
               void handleStartCamera();
             }}
-            className="flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            className="flex items-center gap-2 rounded-lg border border-brand-mid/70 bg-white px-4 py-2 text-xs font-semibold text-brand-dark hover:bg-brand-bg"
           >
-            <RefreshCw size={16} />
-            Try Again
-          </button>
-        </div>
-      );
-    }
-
-    if (cameraState === CameraState.IN_USE) {
-      return (
-        <div className="flex h-full flex-col items-center justify-center gap-4 text-amber-600">
-          <Video size={64} className="opacity-70" />
-          <p className="text-lg font-medium">Camera in use</p>
-          <p className="max-w-md text-center text-sm text-slate-600">
-            The camera is being used by another application. Please close other
-            apps using the camera and try again.
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              void handleStartCamera();
-            }}
-            className="flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            <RefreshCw size={16} />
-            Try Again
-          </button>
-        </div>
-      );
-    }
-
-    if (cameraState === CameraState.ERROR) {
-      return (
-        <div className="flex h-full flex-col items-center justify-center gap-4 text-red-500">
-          <AlertCircle size={64} className="opacity-70" />
-          <p className="text-lg font-medium">Camera error</p>
-          <p className="max-w-md text-center text-sm text-slate-600">
-            {cameraError?.message || 'An unexpected error occurred'}
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              void handleStartCamera();
-            }}
-            className="flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            <RefreshCw size={16} />
+            <RefreshCw size={14} />
             Try Again
           </button>
         </div>
@@ -514,86 +486,37 @@ export default function LiveCameraView({ compactLayout = false }: LiveCameraView
     return null;
   };
 
+  const detectionStatusLabel = detectionState === DetectionState.RUNNING
+    ? 'Running'
+    : detectionState === DetectionState.READY
+      ? 'Ready'
+      : detectionState === DetectionState.LOADING
+        ? 'Loading'
+        : 'Idle';
+
   return (
-    <div className="space-y-4">
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-2xl font-bold tracking-tight text-slate-800">
-              Live Camera Detection
-            </h3>
-            <p className="text-sm text-slate-500">
-              Real-time person detection with gender classification using your
-              webcam
-            </p>
-          </div>
+    <div className="space-y-3">
+      <article className="rounded-xl border border-brand-mid/70 bg-white p-3 shadow-sm">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            {isStreaming && (
-              <span className="flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
-                <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
-                Live
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={() => setShowSettings(!showSettings)}
-              className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50"
-            >
-              <Settings size={18} />
-            </button>
+            <MonitorPlay size={16} className="text-brand-dark" />
+            <p className="text-sm font-semibold text-brand-dark">{isStreaming ? 'Live Webcam Feed' : 'Camera Preview'}</p>
           </div>
-        </div>
-      </div>
 
-      {showSettings && isStreaming && (
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <h4 className="mb-3 text-sm font-semibold text-slate-700">
-            Camera Settings
-          </h4>
-          <div className="flex flex-wrap items-center gap-4">
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-slate-500">Camera Device</span>
-              <select
-                value={selectedDeviceId}
-                onChange={(e) => {
-                  void switchCamera(e.target.value);
+          <div className="flex flex-wrap items-center gap-2">
+            {!isStreaming ? (
+              <button
+                type="button"
+                onClick={() => {
+                  void handleStartCamera();
                 }}
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className="flex items-center gap-1 rounded-lg bg-brand-dark px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-dark/90"
               >
-                {devices.map((device) => (
-                  <option key={device.deviceId} value={device.deviceId}>
-                    {device.label || `Camera ${device.deviceId.slice(0, 8)}`}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-slate-500">Resolution</span>
-              <span className="text-sm font-medium text-slate-700">
-                {streamInfo.width} x {streamInfo.height}
-              </span>
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-slate-500">Camera FPS</span>
-              <span className="text-sm font-medium text-slate-700">
-                {Math.round(streamInfo.frameRate)} fps
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <section className={compactLayout ? 'space-y-4' : 'grid gap-4 xl:grid-cols-[1.4fr_1fr] xl:items-start'}>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <MonitorPlay size={16} className="text-slate-600" />
-              <p className="text-sm font-semibold text-slate-700">
-                {isStreaming ? 'Live Webcam Feed' : 'Camera Preview'}
-              </p>
-            </div>
-            {isStreaming && (
-              <div className="flex items-center gap-2">
+                <PlayCircle size={14} />
+                Start Camera
+              </button>
+            ) : (
+              <>
                 <button
                   type="button"
                   onClick={() => {
@@ -601,72 +524,69 @@ export default function LiveCameraView({ compactLayout = false }: LiveCameraView
                   }}
                   className={`flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold ${
                     isDetecting
-                      ? 'border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
-                      : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                      ? 'border border-brand-accent/50 bg-brand-accent/10 text-brand-accent hover:bg-brand-accent/20'
+                      : 'bg-brand-dark text-white hover:bg-brand-dark/90'
                   }`}
                 >
                   {isDetecting ? <PauseCircle size={14} /> : <Zap size={14} />}
                   {isDetecting ? 'Stop Detection' : 'Start Detection'}
                 </button>
+
                 <button
                   type="button"
                   onClick={() => {
                     stopDetection();
-                    stopStream();
+                    stopCamera();
+                    setIsDetectionActive(false);
                   }}
-                  className="flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  className="flex items-center gap-1 rounded-lg border border-brand-mid/70 bg-white px-3 py-1.5 text-xs font-semibold text-brand-dark hover:bg-brand-bg"
                 >
                   <CameraOff size={14} />
                   Stop Camera
                 </button>
-              </div>
+              </>
             )}
           </div>
+        </div>
 
-          <div className="relative aspect-video w-full overflow-hidden rounded-lg border border-slate-300 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-700">
-            {/* Video element is always rendered but hidden when not streaming */}
+        <div className="mx-auto w-full max-w-lg">
+          <div
+            ref={previewRef}
+            className="relative aspect-square w-full overflow-hidden rounded-xl border border-brand-mid/70 bg-black"
+          >
             <video
               ref={videoRef}
               autoPlay
               playsInline
               muted
-              className={`absolute inset-0 h-full w-full object-cover ${isStreaming ? 'block' : 'hidden'}`}
+              className={`absolute inset-0 h-full w-full object-contain ${isStreaming ? 'block' : 'hidden'}`}
             />
+
             {isStreaming ? (
               <>
                 <canvas
                   ref={canvasRef}
-                  className="absolute inset-0 h-full w-full object-cover"
+                  className="pointer-events-none absolute inset-0 z-10 h-full w-full object-contain"
                 />
-                <div className="absolute left-3 top-3 rounded-md bg-black/55 px-2 py-1 text-[11px] font-semibold text-white">
+
+                <div className="absolute left-2 top-2 rounded-md bg-black/60 px-2 py-1 text-[10px] font-semibold text-white">
                   LIVE | {streamInfo.width}x{streamInfo.height}
                 </div>
-                {isDetecting && (
-                  <>
-                    <div className="absolute right-3 top-3 rounded-md bg-black/55 px-2 py-1 text-[11px] font-semibold text-emerald-300">
-                      AI DETECTION ACTIVE | {fps} FPS
-                    </div>
-                    {deduplication.faceEmbeddingState === FaceEmbeddingState.LOADING && (
-                      <div className="absolute right-3 top-10 flex items-center gap-1 rounded-md bg-amber-500/80 px-2 py-1 text-[10px] font-semibold text-white">
-                        <Loader2 size={10} className="animate-spin" />
-                        Loading Face Models...
-                      </div>
-                    )}
-                  </>
-                )}
-                <div className="absolute left-3 bottom-3 flex items-center gap-2">
-                  <div className="rounded-md bg-black/55 px-2 py-1 text-[11px] font-semibold text-slate-100">
+
+                {isDetecting ? (
+                  <div className="absolute right-2 top-2 rounded-md bg-black/60 px-2 py-1 text-[10px] font-semibold text-[#F9D6B9]">
+                    AI ACTIVE · {fps} FPS
+                  </div>
+                ) : null}
+
+                <div className="absolute bottom-2 left-2 flex items-center gap-2">
+                  <div className="rounded-md bg-black/60 px-2 py-1 text-[10px] font-semibold text-white">
                     {deduplication.stats.activeTracks} tracked
                   </div>
-                  <div className="rounded-md bg-emerald-600/80 px-2 py-1 text-[11px] font-semibold text-white">
+                  <div className="rounded-md bg-brand-dark/90 px-2 py-1 text-[10px] font-semibold text-white">
                     <UserCheck size={10} className="mr-1 inline" />
                     {deduplication.stats.uniquePersons} unique
                   </div>
-                  {deduplication.stats.reIdRate > 0 && (
-                    <div className="rounded-md bg-purple-600/80 px-2 py-1 text-[10px] font-semibold text-white">
-                      {Math.round(deduplication.stats.reIdRate * 100)}% re-ID
-                    </div>
-                  )}
                 </div>
               </>
             ) : (
@@ -674,242 +594,98 @@ export default function LiveCameraView({ compactLayout = false }: LiveCameraView
             )}
           </div>
         </div>
+      </article>
 
-        {!compactLayout ? (
-          <div className="space-y-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h4 className="text-sm font-semibold text-slate-700">
-              Detection Stats
-            </h4>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
-                <span className="flex items-center gap-1 text-sm text-slate-600">
-                  <Activity size={14} /> FPS
-                </span>
-                <strong className="text-slate-800">{fps}</strong>
+      {!compactLayout ? (
+        <section className="grid gap-3 lg:grid-cols-2">
+          <article className="rounded-xl border border-brand-mid/70 bg-white p-3 shadow-sm">
+            <h4 className="text-sm font-semibold text-brand-dark">Detection Activity</h4>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+              <div className="rounded-lg border border-brand-mid/70 bg-brand-bg px-3 py-2">
+                <p className="text-xs text-brand-dark/70">FPS</p>
+                <p className="font-bold text-brand-dark">{fps}</p>
               </div>
-              <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
-                <span className="flex items-center gap-1 text-sm text-slate-600">
-                  <Users size={14} /> Tracked
-                </span>
-                <strong className="text-slate-800">{deduplication.stats.activeTracks}</strong>
+              <div className="rounded-lg border border-brand-mid/70 bg-brand-bg px-3 py-2">
+                <p className="text-xs text-brand-dark/70">Tracked</p>
+                <p className="font-bold text-brand-dark">{deduplication.stats.activeTracks}</p>
               </div>
-              <div className="flex items-center justify-between rounded-lg bg-blue-50 px-3 py-2">
-                <span className="text-sm text-blue-700">Male</span>
-                <strong className="text-blue-800">{stats.maleCount}</strong>
+              <div className="rounded-lg border border-brand-mid/70 bg-brand-bg px-3 py-2">
+                <p className="text-xs text-brand-dark/70">Male</p>
+                <p className="font-bold text-brand-dark">{stats.maleCount}</p>
               </div>
-              <div className="flex items-center justify-between rounded-lg bg-pink-50 px-3 py-2">
-                <span className="text-sm text-pink-700">Female</span>
-                <strong className="text-pink-800">{stats.femaleCount}</strong>
+              <div className="rounded-lg border border-brand-mid/70 bg-brand-bg px-3 py-2">
+                <p className="text-xs text-brand-dark/70">Female</p>
+                <p className="font-bold text-brand-dark">{stats.femaleCount}</p>
               </div>
-              <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-2">
-                <span className="flex items-center gap-1 text-sm text-emerald-700">
-                  <UserCheck size={14} /> Unique
-                </span>
-                <strong className="text-emerald-800">
-                  {deduplication.stats.uniquePersons}
-                </strong>
+              <div className="rounded-lg border border-brand-mid/70 bg-brand-bg px-3 py-2">
+                <p className="text-xs text-brand-dark/70">Unknown</p>
+                <p className="font-bold text-brand-dark">{stats.unknownCount}</p>
               </div>
-              <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
-                <span className="text-sm text-slate-600">
-                  Total Events
-                </span>
-                <strong className="text-slate-800">
-                  {stats.totalDetections}
-                </strong>
+              <div className="rounded-lg border border-brand-mid/70 bg-brand-bg px-3 py-2">
+                <p className="text-xs text-brand-dark/70">Total Events</p>
+                <p className="font-bold text-brand-dark">{stats.totalDetections}</p>
               </div>
             </div>
-          </div>
+          </article>
 
-          {/* Deduplication Stats Panel */}
-          {showDeduplicationStats && (
-            <div className="rounded-xl border border-purple-200 bg-gradient-to-br from-purple-50 to-white p-4 shadow-sm">
-              <div className="mb-3 flex items-center justify-between">
-                <h4 className="flex items-center gap-1.5 text-sm font-semibold text-purple-800">
-                  <Fingerprint size={14} />
-                  Deduplication Stats
-                </h4>
-                <button
-                  type="button"
-                  onClick={() => setShowDeduplicationStats(false)}
-                  className="text-xs text-purple-500 hover:text-purple-700"
-                >
-                  Hide
-                </button>
-              </div>
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-purple-700">Total Tracks (All Time)</span>
-                  <strong className="text-purple-900">{deduplication.stats.totalTracks}</strong>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-purple-700">Active Tracks</span>
-                  <strong className="text-purple-900">{deduplication.stats.activeTracks}</strong>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-purple-700">Dormant Tracks</span>
-                  <strong className="text-purple-900">{deduplication.stats.dormantTracks}</strong>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-purple-700">Re-ID Success Rate</span>
-                  <strong className="text-purple-900">
-                    {Math.round(deduplication.stats.reIdRate * 100)}%
-                  </strong>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-purple-700">Avg Processing Time</span>
-                  <strong className="text-purple-900">
-                    {Math.round(deduplication.stats.avgProcessingTime)}ms
-                  </strong>
-                </div>
-                {deduplication.identityStats && (
-                  <>
-                    <div className="my-2 border-t border-purple-200" />
-                    <div className="flex items-center justify-between">
-                      <span className="flex items-center gap-1 text-purple-700">
-                        <Sparkles size={12} /> Face Re-IDs
-                      </span>
-                      <strong className="text-amber-700">
-                        {deduplication.identityStats.reIdByMethod?.face || 0}
-                      </strong>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-purple-700">Appearance Re-IDs</span>
-                      <strong className="text-purple-700">
-                        {deduplication.identityStats.reIdByMethod?.appearance || 0}
-                      </strong>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-purple-700">Geometric Matches</span>
-                      <strong className="text-slate-700">
-                        {deduplication.identityStats.reIdByMethod?.geometric || 0}
-                      </strong>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-
-          {!showDeduplicationStats && (
-            <button
-              type="button"
-              onClick={() => setShowDeduplicationStats(true)}
-              className="flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-purple-300 py-2 text-xs text-purple-600 hover:bg-purple-50"
-            >
-              <Fingerprint size={12} />
-              Show Deduplication Stats
-            </button>
-          )}
-
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h4 className="text-sm font-semibold text-slate-700">
-              Detection Log
-            </h4>
-            <ul className="mt-3 max-h-[300px] space-y-1.5 overflow-y-auto pr-1 text-xs text-slate-600">
-              {detectionLogs.length === 0 ? (
-                <li className="rounded border border-slate-200 bg-slate-50 px-2 py-2 text-center text-slate-400">
-                  No detections yet. Start the camera and enable detection.
-                </li>
-              ) : (
-                detectionLogs.map((log, index) => (
-                  <li
-                    key={`${log}-${index}`}
-                    className="rounded border border-slate-200 bg-slate-50 px-2 py-1.5"
-                  >
-                    {log}
-                  </li>
-                ))
-              )}
-            </ul>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h4 className="text-sm font-semibold text-slate-700">
-              System Status
-            </h4>
-            <div className="mt-3 space-y-2 text-sm">
+          <article className="rounded-xl border border-brand-mid/70 bg-white p-3 shadow-sm">
+            <h4 className="text-sm font-semibold text-brand-dark">System Status</h4>
+            <div className="mt-3 space-y-2 text-sm text-brand-dark">
               <div className="flex items-center justify-between">
-                <span className="text-slate-600">Camera</span>
-                <span
-                  className={`font-medium ${
-                    isStreaming ? 'text-emerald-600' : 'text-slate-400'
-                  }`}
-                >
-                  {isStreaming ? 'Connected' : 'Disconnected'}
-                </span>
+                <span>Camera</span>
+                <span className="font-semibold">{isStreaming ? 'Connected' : 'Disconnected'}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-slate-600">Person Detection</span>
-                <span
-                  className={`font-medium ${
-                    detectionState === DetectionState.RUNNING
-                      ? 'text-emerald-600'
-                      : detectionState === DetectionState.READY
-                        ? 'text-amber-600'
-                        : 'text-slate-400'
-                  }`}
-                >
-                  {detectionState === DetectionState.RUNNING
-                    ? 'Running'
-                    : detectionState === DetectionState.READY
-                      ? 'Ready'
-                      : detectionState === DetectionState.LOADING
-                        ? 'Loading...'
-                        : 'Idle'}
-                </span>
+                <span>Person Detection</span>
+                <span className="font-semibold">{detectionStatusLabel}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-slate-600">Gender Classification</span>
-                <span
-                  className={`font-medium ${
-                    isClassificationReady
-                      ? 'text-emerald-600'
-                      : 'text-slate-400'
-                  }`}
-                >
-                  {isClassificationReady ? 'Ready' : 'Not loaded'}
-                </span>
+                <span>Gender Classification</span>
+                <span className="font-semibold">{isClassificationReady ? 'Ready' : 'Not loaded'}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-slate-600">Deduplication</span>
-                <span
-                  className={`font-medium ${
-                    deduplication.isInitialized
-                      ? 'text-emerald-600'
-                      : 'text-slate-400'
-                  }`}
-                >
-                  {deduplication.isInitialized ? 'Active' : 'Not initialized'}
-                </span>
+                <span>Deduplication</span>
+                <span className="font-semibold">{deduplication.isInitialized ? 'Active' : 'Not initialized'}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-slate-600">Face Embedding</span>
-                <span
-                  className={`font-medium ${
-                    deduplication.faceEmbeddingState === FaceEmbeddingState.READY
-                      ? 'text-emerald-600'
-                      : deduplication.faceEmbeddingState === FaceEmbeddingState.LOADING
-                        ? 'text-amber-600'
-                        : deduplication.faceEmbeddingState === FaceEmbeddingState.ERROR
-                          ? 'text-red-600'
-                          : 'text-slate-400'
-                  }`}
-                >
+                <span>Face Embedding</span>
+                <span className="font-semibold">
                   {deduplication.faceEmbeddingState === FaceEmbeddingState.READY
                     ? 'Ready'
                     : deduplication.faceEmbeddingState === FaceEmbeddingState.LOADING
-                      ? `Loading (${Math.round(deduplication.faceModelProgress)}%)`
+                      ? 'Loading'
                       : deduplication.faceEmbeddingState === FaceEmbeddingState.ERROR
                         ? 'Error'
                         : 'Not loaded'}
                 </span>
               </div>
             </div>
-          </div>
-          </div>
-        ) : null}
-      </section>
+          </article>
+
+          <article className="lg:col-span-2 rounded-xl border border-brand-mid/70 bg-white p-3 shadow-sm">
+            <div className="mb-2 flex items-center justify-between">
+              <h4 className="text-sm font-semibold text-brand-dark">Detection Log</h4>
+              <span className="rounded-md border border-brand-mid/70 bg-brand-bg px-2 py-1 text-[10px] font-semibold text-brand-dark">
+                {detectionLogs.length} entries
+              </span>
+            </div>
+
+            <ul className="max-h-[220px] space-y-1 overflow-y-auto pr-1 text-xs text-brand-dark/85">
+              {detectionLogs.length === 0 ? (
+                <li className="rounded-md border border-brand-mid/70 bg-brand-bg px-2 py-2 text-center text-brand-dark/60">
+                  No detections yet. Start the camera and enable detection.
+                </li>
+              ) : (
+                detectionLogs.map((log, index) => (
+                  <li key={`${log}-${index}`} className="rounded-md border border-brand-mid/70 bg-brand-bg px-2 py-1.5">
+                    {log}
+                  </li>
+                ))
+              )}
+            </ul>
+          </article>
+        </section>
+      ) : null}
     </div>
   );
 }

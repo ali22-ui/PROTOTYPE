@@ -83,111 +83,126 @@ export default function ArchivedReportsView(): JSX.Element {
   }
 
   return (
-    <div className="grid min-h-[calc(100vh-7rem)] grid-rows-[auto_auto_1fr] gap-4">
-      <header className="rounded-2xl border border-brand-light bg-brand-cream px-5 py-4 shadow-sm">
-        <h2 className="text-3xl font-bold text-brand-dark">Reports Center</h2>
-        <p className="text-lg text-brand-dark/80">
+    <div className="mx-auto w-full max-w-6xl space-y-4">
+      <header className="rounded-xl bg-brand-bg px-6 py-4 shadow-md">
+        <h2 className="text-2xl font-bold tracking-tight text-brand-dark md:text-3xl">Reports Center</h2>
+        <p className="text-sm text-brand-dark/80 md:text-base">
           Prepare and submit monthly report packs to LGU when reporting window is open.
         </p>
       </header>
 
-      <section className="flex flex-wrap items-center justify-end gap-2 rounded-2xl border border-brand-light bg-white px-4 py-3 shadow-sm">
-        <input
-          type="search"
-          value={searchQuery}
-          onChange={(event) => {
-            setSearchQuery(event.target.value);
-            setPage(1);
-          }}
-          placeholder="Search reports..."
-          className="w-full max-w-xs rounded-lg border border-brand-light px-3 py-2 text-sm outline-none focus:border-brand-mid"
-        />
+      <section className="rounded-xl bg-white p-4 shadow-md">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-semibold uppercase tracking-wide text-brand-dark">Archived Reports</p>
 
-        <div className="flex items-center gap-1 text-sm">
-          <button
-            type="button"
-            onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-            disabled={page === 1}
-            className="rounded-md border border-brand-light px-2 py-1 text-brand-dark disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Prev
-          </button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(event) => {
+                setSearchQuery(event.target.value);
+                setPage(1);
+              }}
+              placeholder="Search reports..."
+              className="w-full min-w-[220px] max-w-xs rounded-lg border border-brand-mid/70 px-3 py-2 text-sm outline-none focus:border-brand-dark"
+            />
 
-          {visiblePages.map((pageNumber) => (
-            <button
-              key={pageNumber}
-              type="button"
-              onClick={() => setPage(pageNumber)}
-              className={[
-                'rounded-md border px-2 py-1',
-                page === pageNumber
-                  ? 'border-brand-dark bg-brand-dark text-brand-cream'
-                  : 'border-brand-light text-brand-dark',
-              ].join(' ')}
-            >
-              {pageNumber}
-            </button>
-          ))}
+            <div className="flex items-center gap-1 text-sm">
+              <button
+                type="button"
+                onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                disabled={page === 1}
+                className="rounded-md border border-brand-mid/70 px-2 py-1 text-brand-dark disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Prev
+              </button>
 
-          <button
-            type="button"
-            onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
-            disabled={page >= totalPages}
-            className="rounded-md border border-brand-light px-2 py-1 text-brand-dark disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Next
-          </button>
+              {visiblePages.map((pageNumber) => (
+                <button
+                  key={pageNumber}
+                  type="button"
+                  onClick={() => setPage(pageNumber)}
+                  className={[
+                    'rounded-md border px-2 py-1',
+                    page === pageNumber
+                      ? 'border-brand-dark bg-brand-dark text-brand-cream'
+                      : 'border-brand-mid/70 text-brand-dark hover:bg-brand-bg',
+                  ].join(' ')}
+                >
+                  {pageNumber}
+                </button>
+              ))}
+
+              <button
+                type="button"
+                onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+                disabled={page >= totalPages}
+                className="rounded-md border border-brand-mid/70 px-2 py-1 text-brand-dark disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-2xl border border-brand-light bg-white shadow-sm">
-        <div className="border-b border-brand-light px-4 py-3">
-          <h3 className="text-lg font-semibold text-brand-dark">Past Submitted Reports</h3>
+      <section className="rounded-xl bg-white p-4 shadow-md">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-base font-semibold text-brand-dark md:text-lg">Past Submitted Reports</p>
+          <span className="rounded-md bg-brand-bg px-2 py-1 text-xs font-semibold text-brand-dark">
+            {filteredReports.length} total
+          </span>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full border-collapse text-sm">
-            <thead className="bg-brand-dark text-left text-xs uppercase tracking-wide text-brand-cream">
-              <tr>
-                <th className="px-4 py-3">Report ID</th>
-                <th className="px-4 py-3">Period</th>
-                <th className="px-4 py-3">Submitted Date</th>
-                <th className="px-4 py-3">LGU Status</th>
-                <th className="px-4 py-3">Submitted By</th>
-                <th className="px-4 py-3">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {paginatedReports.map((report) => (
-                <tr key={report.reportId} className="border-t border-brand-light">
-                  <td className="px-4 py-2.5 font-semibold text-brand-dark">{report.reportId}</td>
-                  <td className="px-4 py-2.5 text-brand-dark">{report.periodLabel}</td>
-                  <td className="px-4 py-2.5 text-brand-dark">{report.submittedDateLabel}</td>
-                  <td className="px-4 py-2.5">
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusClasses[report.lguStatus]}`}>
-                      [{report.lguStatus}]
-                    </span>
-                  </td>
-                  <td className="px-4 py-2.5 text-brand-dark">{report.submittedBy}</td>
-                  <td className="px-4 py-2.5">
-                    <a
-                      href={report.downloadHref}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="font-semibold text-brand-dark underline decoration-brand-mid underline-offset-2 hover:text-brand-mid"
-                    >
-                      Download PDF
-                    </a>
-                  </td>
+        <div className="overflow-hidden rounded-xl bg-brand-bg/45">
+          <div className="max-h-[420px] overflow-y-auto">
+            <table className="min-w-full text-sm">
+              <thead className="sticky top-0 z-20 bg-brand-dark/90 text-left text-xs uppercase tracking-wide text-white shadow-sm backdrop-blur-sm">
+                <tr>
+                  <th className="bg-brand-dark/90 px-4 py-2">Report ID</th>
+                  <th className="bg-brand-dark/90 px-4 py-2">Period</th>
+                  <th className="bg-brand-dark/90 px-4 py-2">Submitted Date</th>
+                  <th className="bg-brand-dark/90 px-4 py-2">LGU Status</th>
+                  <th className="bg-brand-dark/90 px-4 py-2">Submitted By</th>
+                  <th className="bg-brand-dark/90 px-4 py-2">Action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="bg-white">
+                {paginatedReports.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-6 text-center text-sm text-brand-dark/70">
+                      No archived reports found.
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedReports.map((report) => (
+                    <tr key={report.reportId} className="border-t border-brand-mid/25 align-top transition-colors hover:bg-brand-cream/50">
+                      <td className="px-4 py-2 font-semibold text-brand-dark">{report.reportId}</td>
+                      <td className="px-4 py-2 text-brand-dark">{report.periodLabel}</td>
+                      <td className="px-4 py-2 text-brand-dark">{report.submittedDateLabel}</td>
+                      <td className="px-4 py-2">
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusClasses[report.lguStatus]}`}>
+                          [{report.lguStatus}]
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 text-brand-dark">{report.submittedBy}</td>
+                      <td className="px-4 py-2">
+                        <a
+                          href={report.downloadHref}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="font-semibold text-brand-dark underline decoration-brand-mid underline-offset-2 hover:text-brand-mid"
+                        >
+                          Download PDF
+                        </a>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-
-        {paginatedReports.length === 0 ? (
-          <div className="border-t border-brand-light px-4 py-6 text-sm text-brand-dark/80">No archived reports found.</div>
-        ) : null}
       </section>
     </div>
   );

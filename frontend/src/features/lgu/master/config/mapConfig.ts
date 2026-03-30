@@ -100,16 +100,16 @@ export const SAN_PEDRO_MAP_BOUNDS: [[number, number], [number, number]] = [
 
 export const MAP_MARKER_STYLE = {
   selected: {
-    color: '#8A5A00',
-    fillColor: '#FFD23F',
+    color: '#5C6F2B',
+    fillColor: '#DE802B',
     fillOpacity: 0.95,
     weight: 2,
     radius: 9,
   },
   default: {
-    color: '#BF8B00',
-    fillColor: '#FFE57A',
-    fillOpacity: 0.95,
+    color: '#D8C9A7',
+    fillColor: '#DE802B',
+    fillOpacity: 0.72,
     weight: 1,
     radius: 6,
   },

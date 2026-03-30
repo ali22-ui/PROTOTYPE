@@ -11,7 +11,6 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { CalendarDays, Globe2, Users, UsersRound } from 'lucide-react';
 import {
   fetchLguLogs,
   fetchLguOverview,
@@ -36,7 +35,7 @@ interface ForecastRow {
 
 const weekdayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const holidaySet = new Set<string>(['01-01', '04-09', '06-12', '08-21', '11-30', '12-25', '12-30']);
-const piePalette = ['#346739', '#79AE6F', '#9FCB98', '#F2EDC2'];
+const piePalette = ['#5C6F2B', '#DE802B', '#D8C9A7', '#1F2937'];
 
 const toIsoDate = (year: number, month: number, day: number): string =>
   `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -197,68 +196,19 @@ export default function OverviewView(): JSX.Element {
   if (!overview) {
     return (
       <div className="grid min-h-full place-items-center rounded-2xl border border-brand-light/70 bg-white">
-        <p className="text-sm text-slate-600">Loading LGU overview data...</p>
+        <p className="text-sm text-slate-700">Loading LGU overview data...</p>
       </div>
     );
   }
 
-  const metricCards = [
-    {
-      label: 'Total Visitors',
-      value: overview.metrics.totalVisitors,
-      icon: UsersRound,
-      accent: 'text-brand-dark',
-    },
-    {
-      label: 'Total Tourists',
-      value: overview.metrics.totalTourists,
-      icon: Globe2,
-      accent: 'text-brand-mid',
-    },
-    {
-      label: 'People Today',
-      value: overview.metrics.totalPeopleToday,
-      icon: Users,
-      accent: 'text-emerald-700',
-    },
-    {
-      label: 'Inside Establishments',
-      value: overview.metrics.currentlyInside,
-      icon: CalendarDays,
-      accent: 'text-amber-700',
-    },
-  ];
-
   return (
-    <div className="grid min-h-full gap-4">
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        {metricCards.map((card) => {
-          const Icon = card.icon;
-          return (
-            <article
-              key={card.label}
-              className="rounded-2xl border border-brand-light/70 bg-white p-4 shadow-sm"
-            >
-              <div className="flex items-center gap-2 text-slate-600">
-                <span className="rounded-xl bg-brand-cream p-2">
-                  <Icon size={16} />
-                </span>
-                <p className="text-xs uppercase tracking-wide">{card.label}</p>
-              </div>
-              <p className={`mt-3 text-3xl font-black ${card.accent}`}>
-                {card.value.toLocaleString()}
-              </p>
-            </article>
-          );
-        })}
-      </section>
-
-      <section className="grid min-h-full gap-4 xl:grid-cols-[1.55fr_1fr]">
-        <article className="grid min-h-full gap-4 rounded-2xl border border-brand-light/70 bg-white p-4 shadow-sm">
+    <div className="grid min-h-full gap-3">
+      <section className="grid min-h-full gap-3 xl:grid-cols-[1.55fr_1fr]">
+        <article className="grid min-h-full gap-3 rounded-2xl border border-brand-light/70 bg-white p-3 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h3 className="text-lg font-bold text-brand-dark">Forecast Calendar</h3>
-              <p className="text-sm text-slate-600">
+              <h3 className="text-base font-bold text-brand-dark">Forecast Calendar</h3>
+              <p className="text-sm text-slate-700">
                 Holiday/weekend-aware assumptions for all connected enterprises.
               </p>
             </div>
@@ -268,7 +218,7 @@ export default function OverviewView(): JSX.Element {
                 onClick={() =>
                   setMonthCursor((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))
                 }
-                className="rounded-lg border border-brand-light px-2.5 py-1.5 text-sm text-brand-dark hover:bg-brand-cream"
+                className="rounded-lg border border-brand-light px-2.5 py-1.5 text-sm text-brand-dark hover:bg-brand-bg"
               >
                 Prev
               </button>
@@ -280,14 +230,14 @@ export default function OverviewView(): JSX.Element {
                 onClick={() =>
                   setMonthCursor((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))
                 }
-                className="rounded-lg border border-brand-light px-2.5 py-1.5 text-sm text-brand-dark hover:bg-brand-cream"
+                className="rounded-lg border border-brand-light px-2.5 py-1.5 text-sm text-brand-dark hover:bg-brand-bg"
               >
                 Next
               </button>
             </div>
           </div>
 
-          <div className="grid grid-cols-7 gap-1 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <div className="grid grid-cols-7 gap-1 text-center text-xs font-semibold uppercase tracking-wide text-slate-700">
             {weekdayLabels.map((label) => (
               <div key={label} className="py-1">
                 {label}
@@ -297,7 +247,7 @@ export default function OverviewView(): JSX.Element {
 
           <div className="grid grid-cols-7 gap-1">
             {Array.from({ length: calendarPrefix }, (_, index) => (
-              <div key={`blank-${index}`} className="h-14 rounded-lg bg-slate-50/60" />
+              <div key={`blank-${index}`} className="h-11 rounded-lg bg-slate-100/90" />
             ))}
             {forecastRows.map((row) => {
               const isSelected = row.isoDate === selectedIsoDate;
@@ -307,21 +257,21 @@ export default function OverviewView(): JSX.Element {
                   key={row.isoDate}
                   type="button"
                   onClick={() => setSelectedIsoDate(row.isoDate)}
-                  className={`h-14 rounded-lg border p-1 text-left text-[11px] transition ${
+                  className={`h-11 rounded-lg border p-1 text-left text-[11px] transition ${
                     isSelected
                       ? 'border-brand-dark bg-brand-mid/25'
                       : row.isPeak
-                        ? 'border-brand-mid/80 bg-brand-light/30 hover:bg-brand-light/45'
+                        ? 'border-brand-dark/40 bg-brand-mid/30 hover:bg-brand-mid/45'
                         : row.isHoliday
                           ? 'border-amber-300 bg-amber-50 hover:bg-amber-100'
-                          : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
+                          : 'border-slate-300 bg-slate-100 hover:bg-slate-200'
                   }`}
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-semibold text-brand-dark">{row.dayNumber}</span>
-                    {row.isPeak ? <span className="text-[10px] font-bold text-emerald-700">Peak</span> : null}
+                    {row.isPeak ? <span className="text-[10px] font-bold text-brand-accent">Peak</span> : null}
                   </div>
-                  <p className="mt-1 truncate text-[10px] text-slate-600">
+                  <p className="truncate text-[10px] text-slate-700">
                     {(row.visitors + row.tourists).toLocaleString()} projected
                   </p>
                 </button>
@@ -330,7 +280,7 @@ export default function OverviewView(): JSX.Element {
           </div>
 
           {selectedForecast ? (
-            <div className="rounded-xl border border-brand-light/70 bg-brand-cream p-3 text-sm text-slate-700">
+            <div className="rounded-xl border border-brand-light/70 bg-brand-bg p-2.5 text-sm text-slate-800">
               <p className="font-semibold text-brand-dark">
                 {selectedForecast.isoDate} ({selectedForecast.weekdayLabel})
               </p>
@@ -338,7 +288,7 @@ export default function OverviewView(): JSX.Element {
                 Visitors: <strong>{selectedForecast.visitors.toLocaleString()}</strong> · Tourists:{' '}
                 <strong>{selectedForecast.tourists.toLocaleString()}</strong>
               </p>
-              <p className="mt-1 text-xs text-slate-600">
+              <p className="mt-1 text-xs text-slate-700">
                 {selectedForecast.isHoliday ? 'Holiday uplift applied. ' : ''}
                 {selectedForecast.isWeekend ? 'Weekend uplift applied. ' : 'Weekday baseline applied. '}
                 {selectedForecast.isPeak ? 'Classified as peak assumption date.' : 'Normal assumption day.'}
@@ -346,59 +296,64 @@ export default function OverviewView(): JSX.Element {
             </div>
           ) : null}
 
-          <div className="h-56 rounded-xl border border-brand-light/70 bg-white p-3">
-            <p className="mb-2 text-sm font-semibold text-brand-dark">Visitor vs Tourist Forecast Trend</p>
+          <div className="h-44 rounded-xl border border-brand-light/70 bg-white p-2.5">
+            <p className="mb-1 text-sm font-semibold text-brand-dark">Visitor vs Tourist Forecast Trend</p>
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={forecastRows}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="dayNumber" />
                 <YAxis />
                 <Tooltip />
-                <Area type="monotone" dataKey="visitors" stroke="#346739" fill="#9FCB98" fillOpacity={0.35} />
-                <Area type="monotone" dataKey="tourists" stroke="#79AE6F" fill="#79AE6F" fillOpacity={0.22} />
+                <Area type="monotone" dataKey="visitors" stroke="#5C6F2B" fill="#D8C9A7" fillOpacity={0.36} />
+                <Area type="monotone" dataKey="tourists" stroke="#DE802B" fill="#DE802B" fillOpacity={0.2} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </article>
 
-        <aside className="grid min-h-full gap-4">
-          <article className="rounded-2xl border border-brand-light/70 bg-white p-4 shadow-sm">
-            <h4 className="text-sm font-semibold text-brand-dark">Visitor vs Tourist Mix</h4>
-            <div className="mt-2 h-56">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={visitorTouristPie} dataKey="value" nameKey="name" outerRadius={86}>
-                    {visitorTouristPie.map((entry, index) => (
-                      <Cell key={entry.name} fill={piePalette[index % piePalette.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
+        <aside className="grid min-h-full gap-3">
+          <article className="rounded-2xl border border-brand-light/70 bg-white p-3 shadow-sm">
+            <h4 className="text-sm font-semibold text-brand-dark">Demographic Mix Overview</h4>
+            <div className="mt-2 grid gap-3 sm:grid-cols-2">
+              <div className="flex flex-col items-center">
+                <div className="h-40 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={visitorTouristPie} dataKey="value" nameKey="name" outerRadius={62}>
+                        {visitorTouristPie.map((entry, index) => (
+                          <Cell key={entry.name} fill={piePalette[index % piePalette.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <p className="mt-1 text-center text-sm font-semibold text-brand-dark">Visitor vs Tourist</p>
+              </div>
+
+              <div className="flex flex-col items-center">
+                <div className="h-40 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={foreignLocalPie} dataKey="value" nameKey="name" outerRadius={62}>
+                        {foreignLocalPie.map((entry, index) => (
+                          <Cell key={entry.name} fill={piePalette[(index + 1) % piePalette.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <p className="mt-1 text-center text-sm font-semibold text-brand-dark">Foreign vs Local Demographics</p>
+              </div>
             </div>
           </article>
 
-          <article className="rounded-2xl border border-brand-light/70 bg-white p-4 shadow-sm">
-            <h4 className="text-sm font-semibold text-brand-dark">Foreign vs Local Demographics</h4>
-            <div className="mt-2 h-56">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={foreignLocalPie} dataKey="value" nameKey="name" outerRadius={86}>
-                    {foreignLocalPie.map((entry, index) => (
-                      <Cell key={entry.name} fill={piePalette[(index + 1) % piePalette.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </article>
-
-          <article className="rounded-2xl border border-brand-light/70 bg-white p-4 shadow-sm">
+          <article className="rounded-2xl border border-brand-light/70 bg-white p-3 shadow-sm">
             <h4 className="text-sm font-semibold text-brand-dark">Latest Logs</h4>
-            <div className="mt-2 max-h-[280px] overflow-y-auto">
+            <div className="mt-2 max-h-[235px] overflow-y-auto">
               <table className="min-w-full text-left text-xs">
-                <thead className="bg-brand-cream text-slate-600">
+                <thead className="bg-brand-bg text-slate-700">
                   <tr>
                     <th className="px-2 py-1.5">Time</th>
                     <th className="px-2 py-1.5">Category</th>
@@ -414,7 +369,7 @@ export default function OverviewView(): JSX.Element {
                           {log.category}
                         </span>
                       </td>
-                      <td className="px-2 py-1.5 text-slate-700">{log.message}</td>
+                      <td className="px-2 py-1.5 text-slate-800">{log.message}</td>
                     </tr>
                   ))}
                 </tbody>

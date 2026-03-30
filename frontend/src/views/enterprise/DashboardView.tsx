@@ -24,13 +24,31 @@ import type { DashboardLayoutData, LguInfractionRecord } from '@/types';
 const numberFormatter = new Intl.NumberFormat('en-PH');
 
 const CHART_COLORS = {
-  male: '#346739',
-  female: '#79AE6F',
-  visitors: '#9FCB98',
-  tourist: '#F2EDC2',
+  male: '#5C6F2B',
+  female: '#DE802B',
+  visitors: '#D8C9A7',
+  tourist: '#5C6F2B',
 };
 
-const RESIDENCE_COLORS = ['#79AE6F', '#346739', '#9FCB98'] as const;
+const RESIDENCE_COLORS = ['#5C6F2B', '#DE802B', '#D8C9A7'] as const;
+const GRID_STROKE = 'rgba(92, 111, 43, 0.14)';
+const RESIDENCE_PIE_MARGIN = { top: 4, right: 4, left: 4, bottom: 34 };
+
+const TOOLTIP_CONTENT_STYLE = {
+  borderRadius: '12px',
+  border: '1px solid #D8C9A7',
+  boxShadow: '0 10px 24px rgba(92, 111, 43, 0.14)',
+  backgroundColor: '#FFFFFF',
+};
+
+const TOOLTIP_LABEL_STYLE = {
+  color: '#5C6F2B',
+  fontWeight: 700,
+};
+
+const TOOLTIP_ITEM_STYLE = {
+  color: '#5C6F2B',
+};
 
 export default function DashboardView(): JSX.Element {
   const { user } = useOutletContext<EnterpriseOutletContext>();
@@ -82,19 +100,19 @@ export default function DashboardView(): JSX.Element {
     : `${layoutData.title} - Tourism Analytics Portal`;
 
   return (
-    <div className="grid min-h-[calc(100vh-7rem)] grid-rows-[auto_auto_1fr] gap-3">
-      <header className="rounded-2xl border border-brand-light bg-brand-cream px-5 py-3 shadow-sm">
-        <h2 className="text-3xl font-bold text-brand-dark">{dashboardTitle}</h2>
-        <p className="text-xl text-brand-dark/80">{layoutData.timestampLabel}</p>
+    <div className="space-y-3">
+      <header className="rounded-xl border border-brand-mid/70 bg-brand-bg px-5 py-4 shadow-sm">
+        <h2 className="text-2xl font-bold text-brand-dark md:text-3xl">{dashboardTitle}</h2>
+        <p className="text-sm text-brand-dark/80 md:text-base">{layoutData.timestampLabel}</p>
       </header>
 
       {infractions.length ? (
-        <section className="rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 shadow-sm">
-          <p className="text-xs font-bold uppercase tracking-wide text-rose-700">Official Warning Record</p>
-          <p className="mt-1 text-sm font-semibold text-rose-800">
+        <section className="rounded-xl border border-brand-accent/40 bg-brand-accent/10 px-4 py-3 shadow-sm">
+          <p className="text-xs font-bold uppercase tracking-wide text-brand-accent">Official Warning Record</p>
+          <p className="mt-1 text-sm font-semibold text-brand-dark">
             You currently have {infractions.length} LGU compliance warning record(s).
           </p>
-          <ul className="mt-2 space-y-1 text-xs text-rose-800">
+          <ul className="mt-2 space-y-1 text-xs text-brand-dark/85">
             {infractions.slice(0, 3).map((record) => (
               <li key={record.id}>
                 • {record.period} — {record.type}
@@ -105,73 +123,77 @@ export default function DashboardView(): JSX.Element {
       ) : null}
 
       <section className="grid gap-3 md:grid-cols-3">
-        <article className="rounded-2xl border border-brand-light bg-brand-cream p-4 shadow-sm">
+        <article className="rounded-xl border border-brand-mid/70 bg-white p-3.5 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wider text-brand-dark/80">Average Visit Count (Month-to-Date)</p>
           <div className="mt-2 flex items-start justify-between gap-2">
-            <p className="text-3xl font-bold text-brand-dark">{numberFormatter.format(metrics.averageVisitCountMtd)}</p>
-            <Users className="text-brand-mid" size={20} />
+            <p className="text-2xl font-bold text-brand-dark md:text-[1.75rem]">{numberFormatter.format(metrics.averageVisitCountMtd)}</p>
+            <Users className="text-brand-accent" size={18} />
           </div>
-          <p className="mt-1 text-base font-semibold text-brand-dark">+{metrics.trendPercentage.toFixed(1)}%</p>
+          <p className="mt-1 text-sm font-semibold text-brand-dark">+{metrics.trendPercentage.toFixed(1)}%</p>
         </article>
 
-        <article className="rounded-2xl border border-brand-light bg-brand-cream p-4 shadow-sm">
+        <article className="rounded-xl border border-brand-mid/70 bg-white p-3.5 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wider text-brand-dark/80">Peak Day</p>
           <div className="mt-2 flex items-start justify-between gap-2">
-            <p className="text-3xl font-bold text-brand-dark">{metrics.peakDayLabel}</p>
-            <CalendarDays className="text-brand-mid" size={20} />
+            <p className="text-2xl font-bold text-brand-dark md:text-[1.75rem]">{metrics.peakDayLabel}</p>
+            <CalendarDays className="text-brand-accent" size={18} />
           </div>
-          <p className="mt-1 text-base text-brand-dark/85">{metrics.peakTimeRange}</p>
+          <p className="mt-1 text-sm text-brand-dark/85">{metrics.peakTimeRange}</p>
         </article>
 
-        <article className="rounded-2xl border border-brand-light bg-brand-cream p-4 shadow-sm">
+        <article className="rounded-xl border border-brand-mid/70 bg-white p-3.5 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wider text-brand-dark/80">Report Submission</p>
           <div className="mt-2 flex items-start justify-between gap-2">
-            <p className="text-3xl font-bold text-brand-dark">{metrics.reportMonthLabel}</p>
-            <Send className="text-brand-mid" size={20} />
+            <p className="text-2xl font-bold text-brand-dark md:text-[1.75rem]">{metrics.reportMonthLabel}</p>
+            <Send className="text-brand-accent" size={18} />
           </div>
-          <p className="mt-1 text-base capitalize text-brand-dark/85">status: {metrics.reportStatus}</p>
+          <p className="mt-1 text-sm capitalize text-brand-dark/85">status: {metrics.reportStatus}</p>
         </article>
       </section>
 
-      <section className="grid min-h-[500px] gap-3 md:grid-cols-[minmax(0,58%)_minmax(0,42%)]">
-        <div className="grid h-full gap-3 grid-rows-[minmax(0,62%)_minmax(0,38%)]">
-          <article className="rounded-2xl border border-brand-light bg-white p-3 shadow-sm">
+      <section className="grid gap-3 lg:grid-cols-[minmax(0,58%)_minmax(0,42%)]">
+        <div className="grid gap-3 lg:grid-rows-[minmax(0,58%)_minmax(0,42%)]">
+          <article className="rounded-xl border border-brand-mid/70 bg-white p-3 shadow-sm">
             <h3 className="mb-2 text-sm font-semibold text-brand-dark">
               Visitor Demographic - Sex, Visitor and Tourist Breakdown
             </h3>
-            <div className="h-[260px] w-full">
+            <div className="h-[220px] w-full">
               <ResponsiveContainer>
                 <AreaChart data={layoutData.weeklyDemographicSeries}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#D6D3A8" />
-                  <XAxis dataKey="day" tick={{ fill: '#346739' }} />
-                  <YAxis tick={{ fill: '#346739' }} />
-                  <Tooltip />
-                  <Legend />
-                  <Area type="monotone" dataKey="male" stackId="1" stroke={CHART_COLORS.male} fill={CHART_COLORS.male} fillOpacity={0.75} />
-                  <Area type="monotone" dataKey="female" stackId="1" stroke={CHART_COLORS.female} fill={CHART_COLORS.female} fillOpacity={0.75} />
-                  <Area type="monotone" dataKey="visitors" stackId="1" stroke={CHART_COLORS.visitors} fill={CHART_COLORS.visitors} fillOpacity={0.75} />
-                  <Area type="monotone" dataKey="tourist" stackId="1" stroke={CHART_COLORS.tourist} fill={CHART_COLORS.tourist} fillOpacity={0.8} />
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" stroke={GRID_STROKE} />
+                  <XAxis dataKey="day" tickLine={false} axisLine={false} tick={{ fill: '#5C6F2B', fontSize: 11 }} />
+                  <YAxis tickLine={false} axisLine={false} tick={{ fill: '#5C6F2B', fontSize: 11 }} />
+                  <Tooltip
+                    contentStyle={TOOLTIP_CONTENT_STYLE}
+                    labelStyle={TOOLTIP_LABEL_STYLE}
+                    itemStyle={TOOLTIP_ITEM_STYLE}
+                  />
+                  <Legend wrapperStyle={{ color: '#5C6F2B', fontSize: 11 }} />
+                  <Area type="monotone" dataKey="male" stackId="1" stroke={CHART_COLORS.male} fill={CHART_COLORS.male} fillOpacity={0.22} strokeWidth={2} />
+                  <Area type="monotone" dataKey="female" stackId="1" stroke={CHART_COLORS.female} fill={CHART_COLORS.female} fillOpacity={0.2} strokeWidth={2} />
+                  <Area type="monotone" dataKey="visitors" stackId="1" stroke={CHART_COLORS.visitors} fill={CHART_COLORS.visitors} fillOpacity={0.4} strokeWidth={1.7} />
+                  <Area type="monotone" dataKey="tourist" stackId="1" stroke={CHART_COLORS.tourist} fill={CHART_COLORS.tourist} fillOpacity={0.1} strokeWidth={1.4} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
           </article>
 
-          <article className="rounded-2xl border border-brand-light bg-white p-3 shadow-sm">
+          <article className="rounded-xl border border-brand-mid/70 bg-white p-3 shadow-sm">
             <h3 className="mb-2 text-sm font-semibold text-brand-dark">Residence Mix Distribution</h3>
-            <div className="h-[185px] w-full">
+            <div className="h-[198px] w-full">
               <ResponsiveContainer>
-                <PieChart>
+                <PieChart margin={RESIDENCE_PIE_MARGIN}>
                   <Pie
                     data={layoutData.residenceMixDistribution}
                     dataKey="value"
                     nameKey="category"
                     cx="50%"
-                    cy="50%"
-                    innerRadius={42}
-                    outerRadius={68}
+                    cy="40%"
+                    innerRadius={34}
+                    outerRadius={56}
                     labelLine={false}
                     paddingAngle={2}
-                    stroke="#F2EDC2"
+                    stroke="#EEEEEE"
                   >
                     {layoutData.residenceMixDistribution.map((row, index) => (
                       <Cell
@@ -180,39 +202,49 @@ export default function DashboardView(): JSX.Element {
                       />
                     ))}
                   </Pie>
-                  <Tooltip />
+                  <Legend
+                    verticalAlign="bottom"
+                    align="center"
+                    wrapperStyle={{ bottom: 10, fontSize: 11, color: '#5C6F2B' }}
+                    formatter={(value, _entry, index) => `${value}: ${layoutData.residenceMixDistribution[index]?.percentage ?? 0}%`}
+                  />
+                  <Tooltip
+                    contentStyle={TOOLTIP_CONTENT_STYLE}
+                    labelStyle={TOOLTIP_LABEL_STYLE}
+                    itemStyle={TOOLTIP_ITEM_STYLE}
+                  />
                 </PieChart>
               </ResponsiveContainer>
-            </div>
-
-            <div className="mt-1 grid gap-1 text-xs text-brand-dark/90 sm:grid-cols-3">
-              {layoutData.residenceMixDistribution.map((row, index) => (
-                <div key={row.category} className="flex items-center gap-1.5">
-                  <span
-                    className="inline-block h-2.5 w-2.5 rounded-full"
-                    style={{ backgroundColor: RESIDENCE_COLORS[index % RESIDENCE_COLORS.length] }}
-                  />
-                  <span>{row.category}: {row.percentage}%</span>
-                </div>
-              ))}
             </div>
           </article>
         </div>
 
-        <article className="h-full rounded-2xl border border-brand-light bg-white p-3 shadow-sm">
+        <article className="rounded-xl border border-brand-mid/70 bg-white p-3 shadow-sm">
           <h3 className="mb-2 text-sm font-semibold text-brand-dark">Hourly Demographic Volume (1:00 - 23:00)</h3>
-          <div className="h-[470px] w-full">
+          <div className="h-[360px] w-full md:h-[390px]">
             <ResponsiveContainer>
               <AreaChart data={layoutData.hourlyDemographicSeries}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#D6D3A8" />
-                <XAxis dataKey="hourLabel" angle={-35} textAnchor="end" height={70} tick={{ fill: '#346739', fontSize: 11 }} />
-                <YAxis tick={{ fill: '#346739' }} />
-                <Tooltip />
-                <Legend />
-                <Area type="monotone" dataKey="male" stroke={CHART_COLORS.male} fill={CHART_COLORS.male} fillOpacity={0.75} />
-                <Area type="monotone" dataKey="female" stroke={CHART_COLORS.female} fill={CHART_COLORS.female} fillOpacity={0.72} />
-                <Area type="monotone" dataKey="visitor" stroke={CHART_COLORS.visitors} fill={CHART_COLORS.visitors} fillOpacity={0.72} />
-                <Area type="monotone" dataKey="tourist" stroke={CHART_COLORS.tourist} fill={CHART_COLORS.tourist} fillOpacity={0.85} />
+                <CartesianGrid vertical={false} strokeDasharray="3 3" stroke={GRID_STROKE} />
+                <XAxis
+                  dataKey="hourLabel"
+                  angle={-35}
+                  textAnchor="end"
+                  height={68}
+                  tickLine={false}
+                  axisLine={false}
+                  tick={{ fill: '#5C6F2B', fontSize: 11 }}
+                />
+                <YAxis tickLine={false} axisLine={false} tick={{ fill: '#5C6F2B', fontSize: 11 }} />
+                <Tooltip
+                  contentStyle={TOOLTIP_CONTENT_STYLE}
+                  labelStyle={TOOLTIP_LABEL_STYLE}
+                  itemStyle={TOOLTIP_ITEM_STYLE}
+                />
+                <Legend wrapperStyle={{ color: '#5C6F2B', fontSize: 11 }} />
+                <Area type="monotone" dataKey="male" stroke={CHART_COLORS.male} fill={CHART_COLORS.male} fillOpacity={0.24} strokeWidth={2} />
+                <Area type="monotone" dataKey="female" stroke={CHART_COLORS.female} fill={CHART_COLORS.female} fillOpacity={0.2} strokeWidth={2} />
+                <Area type="monotone" dataKey="visitor" stroke={CHART_COLORS.visitors} fill={CHART_COLORS.visitors} fillOpacity={0.45} strokeWidth={1.7} />
+                <Area type="monotone" dataKey="tourist" stroke={CHART_COLORS.tourist} fill={CHART_COLORS.tourist} fillOpacity={0.1} strokeWidth={1.5} />
               </AreaChart>
             </ResponsiveContainer>
           </div>

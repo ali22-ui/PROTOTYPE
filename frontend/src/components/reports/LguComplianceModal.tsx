@@ -49,9 +49,9 @@ interface LguComplianceModalProps {
   month: string;
 }
 
-const BRAND_DARK = '#346739';
-const BRAND_MID = '#79AE6F';
-const BRAND_CREAM = '#F2EDC2';
+const BRAND_DARK = '#2F6B3F';
+const BRAND_MID = '#7FB77E';
+const BRAND_CREAM = '#FFF6C0';
 
 const getStatusClass = (status: LguComplianceFormRecord['status']): string => {
   if (status === 'SUBMITTED') {
@@ -343,10 +343,10 @@ export default function LguComplianceModal({
       <div className="flex h-[95vh] w-full max-w-[96rem] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
         <header className="flex items-start justify-between gap-3 border-b px-5 py-4" style={{ backgroundColor: BRAND_DARK }}>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-[#F2EDC2]">LGU Compliance Modal</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-brand-cream">LGU Compliance Modal</p>
             <h3 className="text-xl font-bold text-white">View Monthly Reports - {month}</h3>
             {aggregate ? (
-              <p className="mt-1 text-xs text-[#F2EDC2]">
+              <p className="mt-1 text-xs text-brand-cream">
                 Auto-filled from records: {aggregate.totalVisitors} total visitors, peak date {aggregate.peakDate}.
               </p>
             ) : null}
@@ -452,7 +452,7 @@ export default function LguComplianceModal({
                           className={[
                             'inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-white',
                             isLguReady
-                              ? 'bg-[#2E7D32] hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-70'
+                              ? 'bg-brand-dark hover:bg-brand-mid disabled:cursor-not-allowed disabled:opacity-70'
                               : 'bg-gray-400 cursor-not-allowed',
                           ].join(' ')}
                         >

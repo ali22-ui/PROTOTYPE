@@ -7,8 +7,8 @@ interface EditorSectionProps {
 
 export function EditorSection({ title, children }: EditorSectionProps): JSX.Element {
   return (
-    <section className="rounded-lg border border-[#79AE6F]/40 bg-[#F2EDC2]/25 p-3">
-      <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#346739]">{title}</h4>
+    <section className="rounded-lg border border-brand-mid/40 bg-brand-cream/25 p-3">
+      <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-dark">{title}</h4>
       <div className="space-y-2">{children}</div>
     </section>
   );
@@ -34,7 +34,7 @@ export function EditorInput({
         type={type}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs outline-none ring-[#79AE6F] focus:ring"
+        className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs outline-none ring-brand-mid focus:ring"
       />
     </label>
   );
@@ -54,7 +54,7 @@ export function EditorNumberInput({ label, value, onChange }: EditorNumberInputP
         type="number"
         value={Number.isFinite(value) ? value : 0}
         onChange={(event) => onChange(Number(event.target.value) || 0)}
-        className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs outline-none ring-[#79AE6F] focus:ring"
+        className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs outline-none ring-brand-mid focus:ring"
       />
     </label>
   );
@@ -73,7 +73,7 @@ export function EditorCheckbox({ label, checked, onChange }: EditorCheckboxProps
         type="checkbox"
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
-        className="h-3.5 w-3.5 rounded border-slate-300 text-[#346739] focus:ring-[#79AE6F]"
+        className="h-3.5 w-3.5 rounded border-slate-300 text-brand-dark focus:ring-brand-mid"
       />
       <span>{label}</span>
     </label>
@@ -100,7 +100,7 @@ export function EditorTextarea({
         value={value}
         rows={rows}
         onChange={(event) => onChange(event.target.value)}
-        className="w-full resize-y rounded-md border border-slate-300 px-2 py-1.5 text-xs outline-none ring-[#79AE6F] focus:ring"
+        className="w-full resize-y rounded-md border border-slate-300 px-2 py-1.5 text-xs outline-none ring-brand-mid focus:ring"
       />
     </label>
   );
