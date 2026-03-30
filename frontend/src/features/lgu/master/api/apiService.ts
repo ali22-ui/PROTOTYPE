@@ -170,6 +170,78 @@ const FALLBACK_BARANGAY_GEOJSON: LguBarangaysGeoJsonResponse = {
   })),
 };
 
+const FALLBACK_COMPLEX_BOUNDARIES_GEOJSON: LguBarangaysGeoJsonResponse = {
+  type: 'FeatureCollection',
+  features: [
+    {
+      type: 'Feature',
+      properties: {
+        id: 'san-antonio',
+        name: 'San Antonio',
+      },
+      geometry: {
+        type: 'MultiPolygon',
+        coordinates: [
+          [[
+            [121.0489, 14.3651], [121.0496, 14.3663], [121.0501, 14.3672], [121.0509, 14.3681],
+            [121.0518, 14.3688], [121.0529, 14.3694], [121.0538, 14.3701], [121.0549, 14.3706],
+            [121.0561, 14.3709], [121.0573, 14.3708], [121.0586, 14.3705], [121.0597, 14.37],
+            [121.0608, 14.3692], [121.0617, 14.3685], [121.0624, 14.3676], [121.0631, 14.3667],
+            [121.0635, 14.3658], [121.0634, 14.3649], [121.0628, 14.3641], [121.0619, 14.3635],
+            [121.0608, 14.363], [121.0596, 14.3627], [121.0583, 14.3626], [121.0569, 14.3628],
+            [121.0556, 14.363], [121.0544, 14.3632], [121.0532, 14.3635], [121.0521, 14.3639],
+            [121.051, 14.3643], [121.0499, 14.3647], [121.0489, 14.3651],
+          ]],
+        ],
+      },
+    },
+    {
+      type: 'Feature',
+      properties: {
+        id: 'pacita-1',
+        name: 'Pacita I',
+      },
+      geometry: {
+        type: 'MultiPolygon',
+        coordinates: [
+          [[
+            [121.0494, 14.3442], [121.0501, 14.3453], [121.0508, 14.3462], [121.0517, 14.3469],
+            [121.0527, 14.3474], [121.0538, 14.3478], [121.055, 14.348], [121.0561, 14.3481],
+            [121.0573, 14.3479], [121.0584, 14.3477], [121.0595, 14.3472], [121.0604, 14.3466],
+            [121.0611, 14.3458], [121.0617, 14.3449], [121.0621, 14.3441], [121.0622, 14.3432],
+            [121.0618, 14.3425], [121.0612, 14.3419], [121.0603, 14.3415], [121.0592, 14.3412],
+            [121.0581, 14.341], [121.0569, 14.3409], [121.0557, 14.3409], [121.0546, 14.3411],
+            [121.0534, 14.3414], [121.0522, 14.3418], [121.0512, 14.3423], [121.0504, 14.3428],
+            [121.0498, 14.3434], [121.0494, 14.3442],
+          ]],
+        ],
+      },
+    },
+    {
+      type: 'Feature',
+      properties: {
+        id: 'landayan',
+        name: 'Landayan',
+      },
+      geometry: {
+        type: 'MultiPolygon',
+        coordinates: [
+          [[
+            [121.0597, 14.3508], [121.0606, 14.3519], [121.0614, 14.3528], [121.0624, 14.3534],
+            [121.0635, 14.3539], [121.0648, 14.3544], [121.066, 14.3548], [121.0673, 14.355],
+            [121.0686, 14.3552], [121.07, 14.3552], [121.0713, 14.355], [121.0725, 14.3546],
+            [121.0736, 14.354], [121.0745, 14.3533], [121.0752, 14.3524], [121.0756, 14.3515],
+            [121.0756, 14.3506], [121.0752, 14.3498], [121.0745, 14.3492], [121.0736, 14.3487],
+            [121.0725, 14.3483], [121.0713, 14.348], [121.07, 14.3478], [121.0687, 14.3477],
+            [121.0674, 14.3477], [121.0661, 14.3479], [121.0648, 14.3482], [121.0636, 14.3485],
+            [121.0625, 14.3489], [121.0614, 14.3494], [121.0605, 14.35], [121.0597, 14.3508],
+          ]],
+        ],
+      },
+    },
+  ],
+};
+
 const FALLBACK_OVERVIEW: LguOverviewResponse = {
   city: 'San Pedro City, Laguna',
   zip: '4023',
@@ -732,6 +804,12 @@ export const fetchLguReportsDashboard = async (): Promise<LguReportsDashboardRes
 
 export const fetchLguOverviewAdmin = async (): Promise<LguOverviewAdminResponse> =>
   withFallback<LguOverviewAdminResponse>(() => api.get('/lgu/overview'), FALLBACK_LGU_OVERVIEW);
+
+export const fetchMapBoundaries = async (): Promise<LguBarangaysGeoJsonResponse> =>
+  withFallback<LguBarangaysGeoJsonResponse>(
+    () => api.get('/map/boundaries'),
+    FALLBACK_COMPLEX_BOUNDARIES_GEOJSON,
+  );
 
 export const fetchBarangaysMapData = async (): Promise<LguBarangaysResponse> => {
   const [barangaysPayload, geojsonPayload] = await Promise.all([

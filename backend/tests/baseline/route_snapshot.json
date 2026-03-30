@@ -23,6 +23,41 @@
       "name": "get_barangay_enterprises"
     },
     {
+      "path": "/api/detections/batch",
+      "methods": [
+        "POST"
+      ],
+      "name": "create_detection_batch"
+    },
+    {
+      "path": "/api/detections/cleanup",
+      "methods": [
+        "POST"
+      ],
+      "name": "cleanup_old_detections"
+    },
+    {
+      "path": "/api/detections/dedup-stats",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_deduplication_statistics"
+    },
+    {
+      "path": "/api/detections/statistics",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_visitor_statistics"
+    },
+    {
+      "path": "/api/detections/unified",
+      "methods": [
+        "POST"
+      ],
+      "name": "create_unified_detection_batch"
+    },
+    {
       "path": "/api/enterprise/accounts",
       "methods": [
         "GET"
@@ -42,6 +77,27 @@
         "POST"
       ],
       "name": "enterprise_request_maintenance"
+    },
+    {
+      "path": "/api/enterprise/camera/relay.mjpeg",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_camera_relay"
+    },
+    {
+      "path": "/api/enterprise/camera/source",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_camera_source"
+    },
+    {
+      "path": "/api/enterprise/camera/source",
+      "methods": [
+        "POST"
+      ],
+      "name": "set_camera_source"
     },
     {
       "path": "/api/enterprise/camera/stream",
@@ -210,6 +266,13 @@
         "GET"
       ],
       "name": "get_logs"
+    },
+    {
+      "path": "/api/map/boundaries",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_map_boundaries"
     },
     {
       "path": "/api/overview",

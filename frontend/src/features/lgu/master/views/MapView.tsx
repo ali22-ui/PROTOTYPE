@@ -1,53 +1,137 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { Feature, GeoJsonObject } from 'geojson';
+import * as L from 'leaflet';
+import type { Layer, LeafletMouseEvent, PathOptions } from 'leaflet';
 import {
-  CircleMarker,
+  GeoJSON,
   MapContainer,
   TileLayer,
-  Tooltip,
   useMap,
 } from 'react-leaflet';
 import {
   fetchBarangayEnterpriseNodes,
   fetchBarangaysMapData,
   fetchEnterpriseAnalyticsDetail,
+  fetchMapBoundaries,
 } from '@/features/lgu/master/api/apiService';
 import {
-  getTunedMarkerCenter,
-  MAP_MARKER_STYLE,
   SAN_PEDRO_MAP_BOUNDS,
   SAN_PEDRO_MAP_CENTER,
 } from '@/features/lgu/master/config/mapConfig';
 import EnterpriseDetailsModal from '@/features/lgu/master/components/EnterpriseDetailsModal';
 import type {
   LguBarangay,
+  LguBarangaysGeoJsonResponse,
   LguBarangaysResponse,
   LguEnterpriseAnalyticsDetail,
   LguEnterpriseAnalyticsSummary,
   LguEnterpriseNode,
 } from '@/types';
 
-function FitToSanPedroBounds(): JSX.Element | null {
+const normalizeBarangayName = (value: string): string =>
+  value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\./g, '')
+    .replace(/[^a-z0-9]/g, '');
+
+const PREMIUM_BARANGAY_COLORS: Record<string, string> = {
+  sanantonio: '#5C6F2B',
+  pacitai: '#DE802B',
+  landayan: '#D8C9A7',
+  pacitaii: '#A2D9A1',
+  poblacion: '#F6F1D1',
+  sanroque: '#B5D1FF',
+  sanvicente: '#FFC8A2',
+  sampaguitavillage: '#DCCCF5',
+  bagongsilang: '#C7E9F1',
+  cuyab: '#BDE0B0',
+};
+
+const FALLBACK_PASTEL_COLORS = ['#A2D9A1', '#F6F1D1', '#B5D1FF', '#FFC8A2', '#DCCCF5', '#C7E9F1'];
+
+const resolveBarangayColor = (barangayName: string): string => {
+  const normalized = normalizeBarangayName(barangayName);
+  if (!normalized) {
+    return '#D8C9A7';
+  }
+
+  const mapped = PREMIUM_BARANGAY_COLORS[normalized];
+  if (mapped) {
+    return mapped;
+  }
+
+  let hash = 0;
+  for (let index = 0; index < normalized.length; index += 1) {
+    hash = ((hash << 5) - hash) + normalized.charCodeAt(index);
+    hash |= 0;
+  }
+
+  return FALLBACK_PASTEL_COLORS[Math.abs(hash) % FALLBACK_PASTEL_COLORS.length];
+};
+
+const getFeatureBarangayName = (feature?: Feature): string => {
+  const properties = feature?.properties;
+  if (!properties || typeof properties !== 'object') {
+    return '';
+  }
+
+  const maybeName = (properties as { name?: unknown }).name;
+  return typeof maybeName === 'string' ? maybeName : '';
+};
+
+function FitToGeoJsonBounds({ geojson }: { geojson: GeoJsonObject | null }): JSX.Element | null {
   const map = useMap();
 
   useEffect(() => {
-    map.fitBounds(SAN_PEDRO_MAP_BOUNDS, { padding: [20, 20] });
-  }, [map]);
+    if (!geojson) {
+      return;
+    }
+
+    const layer = L.geoJSON(geojson);
+    const bounds = layer.getBounds();
+    if (bounds.isValid()) {
+      map.fitBounds(bounds, { padding: [20, 20] });
+    }
+  }, [geojson, map]);
 
   return null;
 }
 
-function FocusOnSelectedBarangay({ selectedMarkerCenter }: { selectedMarkerCenter: [number, number] | null }): JSX.Element | null {
+function FocusOnSelectedBoundary({
+  boundariesPayload,
+  selectedBarangayName,
+}: {
+  boundariesPayload: LguBarangaysGeoJsonResponse | null;
+  selectedBarangayName: string;
+}): JSX.Element | null {
   const map = useMap();
 
   useEffect(() => {
-    if (!selectedMarkerCenter) {
+    if (!boundariesPayload || !selectedBarangayName) {
       return;
     }
 
-    map.flyTo(selectedMarkerCenter, 14.8, {
-      duration: 0.6,
-    });
-  }, [map, selectedMarkerCenter]);
+    const selectedKey = normalizeBarangayName(selectedBarangayName);
+    const matched = boundariesPayload.features.find(
+      (feature) => normalizeBarangayName(feature.properties?.name || '') === selectedKey,
+    );
+
+    if (!matched) {
+      return;
+    }
+
+    const layer = L.geoJSON(matched as unknown as GeoJsonObject);
+    const bounds = layer.getBounds();
+    if (bounds.isValid()) {
+      map.flyToBounds(bounds, {
+        duration: 0.6,
+        maxZoom: 15.4,
+        padding: [26, 26],
+      });
+    }
+  }, [boundariesPayload, map, selectedBarangayName]);
 
   return null;
 }
@@ -67,6 +151,7 @@ export default function MapView(): JSX.Element {
     barangays: [],
     heatmap: [],
   });
+  const [boundariesPayload, setBoundariesPayload] = useState<LguBarangaysGeoJsonResponse | null>(null);
   const [selectedBarangayName, setSelectedBarangayName] = useState<string>('');
   const [enterprises, setEnterprises] = useState<LguEnterpriseNode[]>([]);
   const [analyticsByEnterprise, setAnalyticsByEnterprise] = useState<
@@ -77,29 +162,119 @@ export default function MapView(): JSX.Element {
 
   useEffect(() => {
     const loadMap = async (): Promise<void> => {
-      const payload = await fetchBarangaysMapData();
+      const [payload, boundaries] = await Promise.all([
+        fetchBarangaysMapData(),
+        fetchMapBoundaries(),
+      ]);
+
       setMapPayload(payload);
-      if (payload.barangays.length) {
-        setSelectedBarangayName(payload.barangays[0].name);
-      }
+      setBoundariesPayload(boundaries);
+
+      const boundaryNames = boundaries.features
+        .map((feature) => feature.properties?.name)
+        .filter((name): name is string => Boolean(name));
+
+      setSelectedBarangayName((current) => {
+        const currentKey = normalizeBarangayName(current);
+        if (currentKey && boundaryNames.some((name) => normalizeBarangayName(name) === currentKey)) {
+          return current;
+        }
+
+        return boundaryNames[0] || payload.barangays[0]?.name || '';
+      });
     };
 
     void loadMap().catch((error: unknown) => {
-      console.error('Failed to load barangay map payload:', error);
+      console.error('Failed to load map boundaries payload:', error);
     });
   }, []);
 
-  const selectedBarangay = useMemo<LguBarangay | null>(() => {
-    return mapPayload.barangays.find((entry) => entry.name === selectedBarangayName) ?? null;
-  }, [mapPayload.barangays, selectedBarangayName]);
+  const geoJsonData = useMemo<GeoJsonObject | null>(() => {
+    return boundariesPayload as unknown as GeoJsonObject;
+  }, [boundariesPayload]);
 
-  const selectedMarkerCenter = useMemo<[number, number] | null>(() => {
-    if (!selectedBarangay) {
+  const selectableBarangays = useMemo<string[]>(() => {
+    if (!boundariesPayload) {
+      return mapPayload.barangays.map((barangay) => barangay.name);
+    }
+
+    const seen = new Set<string>();
+    const names: string[] = [];
+
+    boundariesPayload.features.forEach((feature) => {
+      const name = feature.properties?.name;
+      if (!name) {
+        return;
+      }
+
+      const key = normalizeBarangayName(name);
+      if (!seen.has(key)) {
+        seen.add(key);
+        names.push(name);
+      }
+    });
+
+    return names;
+  }, [boundariesPayload, mapPayload.barangays]);
+
+  const selectedBarangay = useMemo<LguBarangay | null>(() => {
+    const selectedKey = normalizeBarangayName(selectedBarangayName);
+    if (!selectedKey) {
       return null;
     }
 
-    return getTunedMarkerCenter(selectedBarangay);
-  }, [selectedBarangay]);
+    return (
+      mapPayload.barangays.find((entry) => normalizeBarangayName(entry.name) === selectedKey)
+      ?? null
+    );
+  }, [mapPayload.barangays, selectedBarangayName]);
+
+  const polygonStyle = useCallback(
+    (feature?: Feature): PathOptions => {
+      const name = getFeatureBarangayName(feature);
+
+      return {
+        color: '#1F2937',
+        weight: 1,
+        fillColor: resolveBarangayColor(name),
+        fillOpacity: 0.7,
+      };
+    },
+    [],
+  );
+
+  const onEachBoundaryFeature = useCallback(
+    (feature: Feature, layer: Layer): void => {
+      const name = getFeatureBarangayName(feature);
+      if (!name) {
+        return;
+      }
+
+      if ('bindTooltip' in layer && typeof layer.bindTooltip === 'function') {
+        layer.bindTooltip(name, {
+          direction: 'top',
+          sticky: true,
+          opacity: 0.95,
+        });
+      }
+
+      layer.on({
+        mouseover: (event: LeafletMouseEvent) => {
+          const target = event.target as L.Path;
+          target.setStyle({ fillOpacity: 0.9 });
+          target.bringToFront();
+        },
+        mouseout: (event: LeafletMouseEvent) => {
+          const target = event.target as L.Path;
+          target.setStyle({ fillOpacity: 0.7 });
+        },
+        click: () => {
+          setSelectedBarangayName(name);
+        },
+      });
+    },
+    [],
+  );
 
   const selectedEnterprise = useMemo<LguEnterpriseNode | null>(() => {
     if (!selectedEnterpriseId) {
@@ -109,14 +284,16 @@ export default function MapView(): JSX.Element {
     return enterprises.find((enterprise) => enterprise.id === selectedEnterpriseId) ?? null;
   }, [enterprises, selectedEnterpriseId]);
 
+  const selectedBarangayQueryName = selectedBarangay?.name || selectedBarangayName;
+
   useEffect(() => {
-    if (!selectedBarangayName) {
+    if (!selectedBarangayQueryName) {
       return;
     }
 
     const loadEnterprises = async (): Promise<void> => {
       setIsLoadingEnterprises(true);
-      const payload = await fetchBarangayEnterpriseNodes(selectedBarangayName);
+      const payload = await fetchBarangayEnterpriseNodes(selectedBarangayQueryName);
       setEnterprises(payload.enterprises);
       setSelectedEnterpriseId((current) => {
         if (current && payload.enterprises.some((enterprise) => enterprise.id === current)) {
@@ -144,7 +321,7 @@ export default function MapView(): JSX.Element {
       setSelectedEnterpriseId(null);
       setIsLoadingEnterprises(false);
     });
-  }, [selectedBarangayName]);
+  }, [selectedBarangayQueryName]);
 
   return (
     <div className="grid h-[calc(100vh-10.25rem)] min-h-[620px] gap-4 overflow-hidden lg:grid-cols-[1.65fr_1fr]">
@@ -154,7 +331,7 @@ export default function MapView(): JSX.Element {
             San Pedro City Barangay Intelligence Map
           </h3>
           <p className="text-sm text-slate-600">
-            Accurate 27-barangay interactive map for San Pedro, Laguna (ZIP 4023).
+            High-fidelity boundary rendering for San Pedro, Laguna (ZIP 4023).
           </p>
         </div>
 
@@ -173,39 +350,20 @@ export default function MapView(): JSX.Element {
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
 
-            <FitToSanPedroBounds />
-            <FocusOnSelectedBarangay selectedMarkerCenter={selectedMarkerCenter} />
+            <FitToGeoJsonBounds geojson={geoJsonData} />
+            <FocusOnSelectedBoundary
+              boundariesPayload={boundariesPayload}
+              selectedBarangayName={selectedBarangayName}
+            />
 
-            {mapPayload.barangays.map((barangay) => {
-              const isSelected = selectedBarangayName === barangay.name;
-              const markerCenter = getTunedMarkerCenter(barangay);
-
-              return (
-                <CircleMarker
-                  key={barangay.id}
-                  center={markerCenter}
-                  radius={isSelected ? MAP_MARKER_STYLE.selected.radius : MAP_MARKER_STYLE.default.radius}
-                  pathOptions={{
-                    color: isSelected ? MAP_MARKER_STYLE.selected.color : MAP_MARKER_STYLE.default.color,
-                    fillColor: isSelected
-                      ? MAP_MARKER_STYLE.selected.fillColor
-                      : MAP_MARKER_STYLE.default.fillColor,
-                    fillOpacity: isSelected
-                      ? MAP_MARKER_STYLE.selected.fillOpacity
-                      : MAP_MARKER_STYLE.default.fillOpacity,
-                    weight: isSelected ? MAP_MARKER_STYLE.selected.weight : MAP_MARKER_STYLE.default.weight,
-                  }}
-                  eventHandlers={{
-                    click: () => setSelectedBarangayName(barangay.name),
-                  }}
-                >
-                  <Tooltip direction="top" className="!border-0 !bg-white !px-2 !py-1 !text-[11px] !font-semibold !text-brand-dark !shadow-sm">
-                    {barangay.name}
-                  </Tooltip>
-                </CircleMarker>
-              );
-            })}
-
+            {geoJsonData ? (
+              <GeoJSON
+                key={`${selectedBarangayName}-${selectableBarangays.join('|')}`}
+                data={geoJsonData}
+                style={polygonStyle}
+                onEachFeature={onEachBoundaryFeature}
+              />
+            ) : null}
           </MapContainer>
         </div>
       </section>
@@ -226,23 +384,46 @@ export default function MapView(): JSX.Element {
               <option value="" disabled>
                 Select a barangay
               </option>
-              {mapPayload.barangays.map((barangay) => (
-                <option key={barangay.id} value={barangay.name}>
-                  {barangay.name}
+              {selectableBarangays.map((name) => (
+                <option key={name} value={name}>
+                  {name}
                 </option>
               ))}
             </select>
           </div>
           <p className="mt-2 text-xs text-slate-600">
-            {selectedBarangay
-              ? `${selectedBarangay.enterpriseCount} registered enterprise account(s)`
-              : 'Select a barangay from the dropdown or click a map marker to view linked enterprise nodes.'}
+            {selectedBarangayName
+              ? `${selectedBarangay?.enterpriseCount ?? 0} registered enterprise account(s)`
+              : 'Select a barangay from the dropdown or click a map boundary to view linked enterprise nodes.'}
           </p>
+
+          <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-600">
+            <span className="inline-flex items-center gap-1 rounded-full bg-brand-cream px-2 py-0.5">
+              <span className="h-2 w-2 rounded-full bg-[#5C6F2B]" />
+              Core Zone
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-orange-700">
+              <span className="h-2 w-2 rounded-full bg-[#DE802B]" />
+              Commercial Belt
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-amber-700">
+              <span className="h-2 w-2 rounded-full bg-[#D8C9A7]" />
+              Residential / Mixed
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-700">
+              <span className="h-2 w-2 rounded-full bg-[#A2D9A1]" />
+              Green Transitional
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2 py-0.5 text-yellow-700">
+              <span className="h-2 w-2 rounded-full bg-[#F6F1D1]" />
+              Peripheral Cluster
+            </span>
+          </div>
         </section>
 
         <section className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-brand-light/70 bg-white p-4 shadow-sm">
           <h4 className="text-sm font-bold uppercase tracking-wide text-brand-dark">
-            Enterprises in {selectedBarangay?.name || 'Barangay'}
+            Enterprises in {selectedBarangayName || 'Barangay'}
           </h4>
 
           {isLoadingEnterprises ? (
@@ -318,7 +499,6 @@ export default function MapView(): JSX.Element {
             </div>
           )}
         </section>
-
       </aside>
 
       <EnterpriseDetailsModal

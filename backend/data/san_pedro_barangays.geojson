@@ -1,4 +1,977 @@
 {
   "type": "FeatureCollection",
-  "features": []
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "bagong-silang",
+        "name": "Bagong Silang",
+        "city": "San Pedro City, Laguna",
+        "zip": "4023"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0381,
+              14.3522
+            ],
+            [
+              121.04889999999999,
+              14.34954
+            ],
+            [
+              121.04808999999999,
+              14.3446
+            ],
+            [
+              121.0381,
+              14.3465
+            ],
+            [
+              121.0381,
+              14.3522
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "calendola",
+        "name": "Calendola",
+        "city": "San Pedro City, Laguna",
+        "zip": "4023"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0318,
+              14.3521
+            ],
+            [
+              121.0438,
+              14.349089999999999
+            ],
+            [
+              121.0429,
+              14.343499999999999
+            ],
+            [
+              121.0318,
+              14.34565
+            ],
+            [
+              121.0318,
+              14.3521
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "chrysanthemum",
+        "name": "Chrysanthemum",
+        "city": "San Pedro City, Laguna",
+        "zip": "4023"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0439,
+              14.356
+            ],
+            [
+              121.0571,
+              14.352640000000001
+            ],
+            [
+              121.05611,
+              14.346400000000001
+            ],
+            [
+              121.0439,
+              14.3488
+            ],
+            [
+              121.0439,
+              14.356
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "cuyab",
+        "name": "Cuyab",
+        "city": "San Pedro City, Laguna",
+        "zip": "4023"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.04990000000001,
+              14.3784
+            ],
+            [
+              121.0643,
+              14.375739999999999
+            ],
+            [
+              121.06322,
+              14.3708
+            ],
+            [
+              121.04990000000001,
+              14.3727
+            ],
+            [
+              121.04990000000001,
+              14.3784
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "estrella",
+        "name": "Estrella",
+        "city": "San Pedro City, Laguna",
+        "zip": "4023"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.02770000000001,
+              14.3499
+            ],
+            [
+              121.0385,
+              14.346889999999998
+            ],
+            [
+              121.03769,
+              14.341299999999999
+            ],
+            [
+              121.02770000000001,
+              14.343449999999999
+            ],
+            [
+              121.02770000000001,
+              14.3499
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "fatima",
+        "name": "Fatima",
+        "city": "San Pedro City, Laguna",
+        "zip": "4023"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0455,
+              14.364899999999999
+            ],
+            [
+              121.0575,
+              14.36154
+            ],
+            [
+              121.0566,
+              14.3553
+            ],
+            [
+              121.0455,
+              14.3577
+            ],
+            [
+              121.0455,
+              14.364899999999999
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "gsis",
+        "name": "G.S.I.S.",
+        "city": "San Pedro City, Laguna",
+        "zip": "4023"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0362,
+              14.361
+            ],
+            [
+              121.0494,
+              14.35834
+            ],
+            [
+              121.04841,
+              14.3534
+            ],
+            [
+              121.0362,
+              14.355300000000002
+            ],
+            [
+              121.0362,
+              14.361
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "landayan",
+        "name": "Landayan",
+        "city": "San Pedro City, Laguna",
+        "zip": "4023"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0604,
+              14.3564
+            ],
+            [
+              121.0748,
+              14.35339
+            ],
+            [
+              121.07372,
+              14.3478
+            ],
+            [
+              121.0604,
+              14.34995
+            ],
+            [
+              121.0604,
+              14.3564
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "langgam",
+        "name": "Langgam",
+        "city": "San Pedro City, Laguna",
+        "zip": "4023"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.02130000000001,
+              14.341199999999999
+            ],
+            [
+              121.0321,
+              14.33784
+            ],
+            [
+              121.03129,
+              14.3316
+            ],
+            [
+              121.02130000000001,
+              14.334
+            ],
+            [
+              121.02130000000001,
+              14.341199999999999
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "laram",
+        "name": "Laram",
+        "city": "San Pedro City, Laguna",
+        "zip": "4023"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0283,
+              14.3417
+            ],
+            [
+              121.0403,
+              14.339039999999999
+            ],
+            [
+              121.0394,
+              14.3341
+            ],
+            [
+              121.0283,
+              14.336
+            ],
+            [
+              121.0283,
+              14.3417
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "magsaysay",
+        "name": "Magsaysay",
+        "city": "San Pedro City, Laguna",
+        "zip": "4023"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0299,
+              14.3541
+            ],
+            [
+              121.04310000000001,
+              14.35109
+            ],
+            [
+              121.04211000000001,
+              14.3455
+            ],
+            [
+              121.0299,
+              14.34765
+            ],
+            [
+              121.0299,
+              14.3541
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "maharlika",
+        "name": "Maharlika",
+        "city": "San Pedro City, Laguna",
+        "zip": "4023"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0385,
+              14.3513
+            ],
+            [
+              121.0529,
+              14.347940000000001
+            ],
+            [
+              121.05181999999999,
+              14.341700000000001
+            ],
+            [
+              121.0385,
+              14.344100000000001
+            ],
+            [
+              121.0385,
+              14.3513
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "narra",
+        "name": "Narra",
+        "city": "San Pedro City, Laguna",
+        "zip": "4023"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.03070000000001,
+              14.343
+            ],
+            [
+              121.0415,
+              14.34034
+            ],
+            [
+              121.04069,
+              14.3354
+            ],
+            [
+              121.03070000000001,
+              14.3373
+            ],
+            [
+              121.03070000000001,
+              14.343
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "nueva",
+        "name": "Nueva",
+        "city": "San Pedro City, Laguna",
+        "zip": "4023"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0516,
+              14.3626
+            ],
+            [
+              121.0636,
+              14.359589999999999
+            ],
+            [
+              121.06269999999999,
+              14.354
+            ],
+            [
+              121.0516,
+              14.35615
+            ],
+            [
+              121.0516,
+              14.3626
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "pacita-1",
+        "name": "Pacita I",
+        "city": "San Pedro City, Laguna",
+        "zip": "4023"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0499,
+              14.3501
+            ],
+            [
+              121.0631,
+              14.34674
+            ],
+            [
+              121.06211,
+              14.3405
+            ],
+            [
+              121.0499,
+              14.3429
+            ],
+            [
+              121.0499,
+              14.3501
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "pacita-2",
+        "name": "Pacita II",
+        "city": "San Pedro City, Laguna",
+        "zip": "4023"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.041,
+              14.3536
+            ],
+            [
+              121.05539999999999,
+              14.35094
+            ],
+            [
+              121.05431999999999,
+              14.346
+            ],
+            [
+              121.041,
+              14.347900000000001
+            ],
+            [
+              121.041,
+              14.3536
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "poblacion",
+        "name": "Poblacion",
+        "city": "San Pedro City, Laguna",
+        "zip": "4023"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0527,
+              14.366200000000001
+            ],
+            [
+              121.06349999999999,
+              14.36319
+            ],
+            [
+              121.06268999999999,
+              14.3576
+            ],
+            [
+              121.0527,
+              14.35975
+            ],
+            [
+              121.0527,
+              14.366200000000001
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "riverside",
+        "name": "Riverside",
+        "city": "San Pedro City, Laguna",
+        "zip": "4023"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0332,
+              14.349
+            ],
+            [
+              121.0452,
+              14.345640000000001
+            ],
+            [
+              121.04429999999999,
+              14.339400000000001
+            ],
+            [
+              121.0332,
+              14.341800000000001
+            ],
+            [
+              121.0332,
+              14.349
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "rosario",
+        "name": "Rosario",
+        "city": "San Pedro City, Laguna",
+        "zip": "4023"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0466,
+              14.3519
+            ],
+            [
+              121.05980000000001,
+              14.34924
+            ],
+            [
+              121.05881000000001,
+              14.3443
+            ],
+            [
+              121.0466,
+              14.346200000000001
+            ],
+            [
+              121.0466,
+              14.3519
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "sampaguita",
+        "name": "Sampaguita Village",
+        "city": "San Pedro City, Laguna",
+        "zip": "4023"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0313,
+              14.358500000000001
+            ],
+            [
+              121.0457,
+              14.35549
+            ],
+            [
+              121.04462,
+              14.3499
+            ],
+            [
+              121.0313,
+              14.35205
+            ],
+            [
+              121.0313,
+              14.358500000000001
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "san-antonio",
+        "name": "San Antonio",
+        "city": "San Pedro City, Laguna",
+        "zip": "4023"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.05080000000001,
+              14.371699999999999
+            ],
+            [
+              121.0616,
+              14.36834
+            ],
+            [
+              121.06079,
+              14.3621
+            ],
+            [
+              121.05080000000001,
+              14.3645
+            ],
+            [
+              121.05080000000001,
+              14.371699999999999
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "san-lorenzo-ruiz",
+        "name": "San Lorenzo Ruiz",
+        "city": "San Pedro City, Laguna",
+        "zip": "4023"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0434,
+              14.3563
+            ],
+            [
+              121.0554,
+              14.353639999999999
+            ],
+            [
+              121.0545,
+              14.3487
+            ],
+            [
+              121.0434,
+              14.3506
+            ],
+            [
+              121.0434,
+              14.3563
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "san-roque",
+        "name": "San Roque",
+        "city": "San Pedro City, Laguna",
+        "zip": "4023"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0555,
+              14.371500000000001
+            ],
+            [
+              121.0687,
+              14.36849
+            ],
+            [
+              121.06771,
+              14.3629
+            ],
+            [
+              121.0555,
+              14.36505
+            ],
+            [
+              121.0555,
+              14.371500000000001
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "san-vicente",
+        "name": "San Vicente",
+        "city": "San Pedro City, Laguna",
+        "zip": "4023"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0411,
+              14.3622
+            ],
+            [
+              121.0555,
+              14.35884
+            ],
+            [
+              121.05442,
+              14.3526
+            ],
+            [
+              121.0411,
+              14.355
+            ],
+            [
+              121.0411,
+              14.3622
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "santo-nino",
+        "name": "Santo Niño",
+        "city": "San Pedro City, Laguna",
+        "zip": "4023"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0514,
+              14.3736
+            ],
+            [
+              121.06219999999999,
+              14.37094
+            ],
+            [
+              121.06138999999999,
+              14.366
+            ],
+            [
+              121.0514,
+              14.3679
+            ],
+            [
+              121.0514,
+              14.3736
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "united-bayanihan",
+        "name": "United Bayanihan",
+        "city": "San Pedro City, Laguna",
+        "zip": "4023"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0355,
+              14.3488
+            ],
+            [
+              121.0475,
+              14.34579
+            ],
+            [
+              121.0466,
+              14.3402
+            ],
+            [
+              121.0355,
+              14.34235
+            ],
+            [
+              121.0355,
+              14.3488
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "united-better-living",
+        "name": "United Better Living",
+        "city": "San Pedro City, Laguna",
+        "zip": "4023"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.02459999999999,
+              14.3539
+            ],
+            [
+              121.0378,
+              14.35054
+            ],
+            [
+              121.03681,
+              14.3443
+            ],
+            [
+              121.02459999999999,
+              14.3467
+            ],
+            [
+              121.02459999999999,
+              14.3539
+            ]
+          ]
+        ]
+      }
+    }
+  ]
 }

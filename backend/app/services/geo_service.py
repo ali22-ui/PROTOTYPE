@@ -1,4 +1,10 @@
+import json
+from pathlib import Path
+
 from app.repositories import geo_repository
+
+
+BOUNDARIES_GEOJSON_PATH = Path(__file__).resolve().parents[2] / "data" / "gis" / "san_pedro_boundaries.geojson"
 
 
 def get_barangays():
@@ -50,6 +56,76 @@ def get_barangays_geojson():
         "type": "FeatureCollection",
         "features": features,
     }
+
+
+def get_map_boundaries():
+    path = BOUNDARIES_GEOJSON_PATH
+
+    if path.exists():
+        try:
+            with path.open("r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+
+            features = payload.get("features")
+            if payload.get("type") == "FeatureCollection" and isinstance(features, list) and features:
+                filtered_features = []
+
+                for feature in features:
+                    if not isinstance(feature, dict):
+                        continue
+
+                    geometry = feature.get("geometry") or {}
+                    properties = feature.get("properties") or {}
+
+                    if not isinstance(geometry, dict) or not isinstance(properties, dict):
+                        continue
+
+                    geometry_type = geometry.get("type")
+                    coordinates = geometry.get("coordinates")
+                    if geometry_type not in {"Polygon", "MultiPolygon"}:
+                        continue
+                    if not isinstance(coordinates, list) or not coordinates:
+                        continue
+
+                    # Keep only official barangay/admin boundary features.
+                    if properties.get("boundary") != "administrative":
+                        continue
+
+                    name = properties.get("name")
+                    if not isinstance(name, str) or not name.strip():
+                        continue
+
+                    feature_id = (
+                        properties.get("id")
+                        or properties.get("@id")
+                        or feature.get("id")
+                        or name.lower().replace(" ", "-")
+                    )
+
+                    filtered_features.append(
+                        {
+                            "type": "Feature",
+                            "properties": {
+                                **properties,
+                                "id": str(feature_id),
+                                "name": name,
+                            },
+                            "geometry": {
+                                "type": geometry_type,
+                                "coordinates": coordinates,
+                            },
+                        }
+                    )
+
+                if filtered_features:
+                    return {
+                        "type": "FeatureCollection",
+                        "features": filtered_features,
+                    }
+        except (OSError, json.JSONDecodeError):
+            pass
+
+    return get_barangays_geojson()
 
 
 def get_barangay_enterprises(barangay_name: str):
