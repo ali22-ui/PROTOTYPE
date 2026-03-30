@@ -65,7 +65,7 @@ export default function LguSidebarLayout({
   }, [location.pathname]);
 
   return (
-    <div className="min-h-screen bg-brand-cream text-brand-dark">
+    <div className="min-h-screen bg-white text-brand-dark">
       <div className="grid min-h-screen grid-cols-[280px_1fr]">
         <aside className="sticky top-0 flex h-screen flex-col border-r border-brand-light/60 bg-brand-dark px-3 py-4 text-brand-cream shadow-xl">
           <div className="rounded-2xl border border-brand-light/40 bg-brand-mid/20 px-4 py-4">
@@ -117,7 +117,7 @@ export default function LguSidebarLayout({
           </nav>
         </aside>
 
-        <main className="flex min-h-screen flex-col">
+        <main className="flex min-h-screen flex-col bg-white">
           <header className="border-b border-brand-light/60 bg-white/85 px-6 py-4 backdrop-blur">
             <div className="flex items-center justify-between gap-4">
               <div>
@@ -131,7 +131,7 @@ export default function LguSidebarLayout({
             </div>
           </header>
 
-          <section className="grid flex-1 p-5">
+          <section className="grid flex-1 bg-white p-5">
             <Outlet />
           </section>
         </main>

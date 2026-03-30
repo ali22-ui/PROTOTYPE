@@ -38,7 +38,7 @@ class RootErrorBoundary extends React.Component<
     }
 
     return (
-      <div className="grid min-h-screen place-items-center bg-slate-100 p-6">
+      <div className="grid min-h-screen place-items-center bg-white p-6">
         <div className="w-full max-w-2xl rounded-2xl border border-rose-200 bg-white p-6 shadow-lg">
           <h1 className="text-xl font-bold text-rose-700">UI runtime error detected</h1>
           <p className="mt-2 text-sm text-slate-600">

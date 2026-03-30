@@ -50,7 +50,7 @@ export default function EnterpriseShell({ user, onLogout }: EnterpriseShellProps
   const noticeTheme = getComplianceStatusTheme(noticeStatus);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-brand-cream text-brand-dark">
+    <div className="flex h-screen overflow-hidden bg-white text-brand-dark">
       <aside className="sticky top-0 flex h-screen w-[280px] flex-shrink-0 flex-col overflow-hidden border-r border-[#79AE6F]/55 bg-brand-dark bg-gradient-to-b from-[#214f2a] via-[#1c4527] to-[#173a20] text-white shadow-2xl shadow-black/20">
         <div className="border-b border-[#79AE6F]/50 p-5">
           <p className="text-xs uppercase tracking-widest text-[#C7DFBD]">Enterprise Portal</p>
@@ -93,7 +93,7 @@ export default function EnterpriseShell({ user, onLogout }: EnterpriseShellProps
         </div>
       </aside>
 
-      <main className="flex-1 min-w-0 h-screen overflow-y-auto bg-brand-cream p-5 md:p-6 lg:p-7">
+      <main className="flex-1 min-w-0 h-screen overflow-y-auto bg-white p-5 md:p-6 lg:p-7">
         {isNoticeVisible ? (
           <section
             className={`mb-4 flex items-start gap-2 rounded-2xl border px-4 py-3 shadow-sm ${noticeTheme.bannerClass}`}

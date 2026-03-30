@@ -12,8 +12,6 @@ body,
 body {
   margin: 0;
   font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-  background: #F2EDC2;
-  color: #346739;
   line-height: 1.45;
   text-rendering: optimizeLegibility;
 }

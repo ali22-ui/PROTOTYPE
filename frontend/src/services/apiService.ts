@@ -1,4 +1,4 @@
-import http, { fetchCameraLogs, fetchEnterpriseDashboard } from './api';
+import http, { fetchCameraLogs, fetchEnterpriseDashboard, sanitizeForTransport } from './api';
 import type {
   ComplianceFormDataMap,
   DOTAccreditationFormRecord,
@@ -618,22 +618,24 @@ export const submitMonthlyReportForm = async (
   form: LguComplianceFormRecord,
   pdfBlob?: Blob,
 ): Promise<LguFormSubmissionResult> => {
-  const payload = {
+  const safeEnterpriseId = sanitizeForTransport(enterpriseId);
+  const safeMonth = sanitizeForTransport(month);
+  const payload = sanitizeForTransport({
     source: 'lgu-compliance-modal-v2',
     generated_at: nowIso(),
     form_type: form.type,
-    month,
+    month: safeMonth,
     form_data: form.data,
-  };
+  });
 
   try {
     if (pdfBlob) {
       const multipart = new FormData();
-      multipart.append('enterprise_id', enterpriseId);
-      multipart.append('period', month);
+      multipart.append('enterprise_id', safeEnterpriseId);
+      multipart.append('period', safeMonth);
       multipart.append('form_type', form.type);
       multipart.append('payload', JSON.stringify(payload));
-      multipart.append('report_pdf', pdfBlob, `${form.type}-${month}.pdf`);
+      multipart.append('report_pdf', pdfBlob, `${form.type}-${safeMonth}.pdf`);
 
       const uploadResponse = await http.post<{ report_id?: string; status?: string; message?: string }>(
         '/enterprise/reports/submit',
@@ -649,8 +651,8 @@ export const submitMonthlyReportForm = async (
     }
 
     const response = await http.post<{ report_id?: string; status?: string; message?: string }>('/enterprise/reports/submit', {
-      enterprise_id: enterpriseId,
-      period: month,
+      enterprise_id: safeEnterpriseId,
+      period: safeMonth,
       payload,
     });
 
@@ -663,7 +665,7 @@ export const submitMonthlyReportForm = async (
   } catch {
     // Black-box resilient fallback pathway.
     await http.post('/enterprise/actions/manual-log-correction', {
-      enterprise_id: enterpriseId,
+      enterprise_id: safeEnterpriseId,
       message: `LGU form submitted via resilient fallback: ${form.title} (${month}).`,
       payload: {
         ...payload,

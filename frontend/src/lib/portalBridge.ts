@@ -13,6 +13,7 @@ import type {
 export const LGU_PORTAL_BRIDGE_STORAGE_KEY = 'lgu-enterprise-portal-bridge-v1';
 export const REPORTING_STATUS_STORAGE_KEY = 'reportingStatus';
 const PORTAL_BRIDGE_EVENT_NAME = 'lgu-portal-bridge-updated';
+const STORAGE_B64_PREFIX = 'b64:';
 
 export type ReportingControlScope = 'ALL' | 'ENTERPRISE';
 
@@ -193,6 +194,27 @@ const normalizeReportingControlState = (value: unknown): LguReportingControlStat
 const canUseStorage = (): boolean =>
   typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 
+const encodeBase64 = (value: string): string => {
+  const bytes = new TextEncoder().encode(value);
+  let binary = '';
+
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+
+  return globalThis.btoa(binary);
+};
+
+const decodeBase64 = (value: string): string | null => {
+  try {
+    const binary = globalThis.atob(value);
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  } catch {
+    return null;
+  }
+};
+
 const readJson = <T>(key: string, fallback: T): T => {
   if (!canUseStorage()) {
     return fallback;
@@ -204,7 +226,14 @@ const readJson = <T>(key: string, fallback: T): T => {
       return fallback;
     }
 
-    return JSON.parse(raw) as T;
+    const decoded = raw.startsWith(STORAGE_B64_PREFIX)
+      ? decodeBase64(raw.slice(STORAGE_B64_PREFIX.length))
+      : raw;
+    if (!decoded) {
+      return fallback;
+    }
+
+    return JSON.parse(decoded) as T;
   } catch {
     return fallback;
   }
@@ -215,7 +244,9 @@ const writeJson = <T>(key: string, value: T): void => {
     return;
   }
 
-  window.localStorage.setItem(key, JSON.stringify(value));
+  const serialized = JSON.stringify(value);
+  const encoded = `${STORAGE_B64_PREFIX}${encodeBase64(serialized)}`;
+  window.localStorage.setItem(key, encoded);
   window.dispatchEvent(
     new CustomEvent(PORTAL_BRIDGE_EVENT_NAME, {
       detail: {
@@ -233,7 +264,10 @@ const writeLegacyReportingStatus = (status: LguReportingControlStatus | null): v
   if (!status) {
     window.localStorage.removeItem(REPORTING_STATUS_STORAGE_KEY);
   } else {
-    window.localStorage.setItem(REPORTING_STATUS_STORAGE_KEY, status);
+    window.localStorage.setItem(
+      REPORTING_STATUS_STORAGE_KEY,
+      `${STORAGE_B64_PREFIX}${encodeBase64(status)}`,
+    );
   }
 
   window.dispatchEvent(
@@ -277,8 +311,16 @@ export const getLegacyReportingStatus = (): LguReportingControlStatus | null => 
     return null;
   }
 
-  const isClosed = raw.trim().toLowerCase() === 'closed';
-  return normalizeControlStatus(raw, !isClosed);
+  const decoded = raw.startsWith(STORAGE_B64_PREFIX)
+    ? decodeBase64(raw.slice(STORAGE_B64_PREFIX.length))
+    : raw;
+  if (!decoded) {
+    return null;
+  }
+
+  const normalizedRaw = decoded.trim();
+  const isClosed = normalizedRaw.toLowerCase() === 'closed';
+  return normalizeControlStatus(normalizedRaw, !isClosed);
 };
 
 export const getReportingControlState = (): LguReportingControlState | null =>

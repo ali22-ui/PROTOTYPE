@@ -28,11 +28,13 @@ import type {
 import { buildSubmissionRecordFromLogs, upsertSubmissionRecord } from '@/lib/portalBridge';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
-const SESSION_TOKEN_KEY = 'enterprise-session-token';
+export const ENTERPRISE_SESSION_TOKEN_KEY = 'enterprise-session-token';
+export const LGU_SESSION_TOKEN_KEY = 'lgu-session-token';
 const SESSION_USER_KEY = 'enterprise-session-user';
 const LEGACY_ENTERPRISE_ID_KEY = 'enterprise-account-id';
 const LEGACY_ENTERPRISE_NAME_KEY = 'enterprise-account-name';
 const ACCOUNT_SETTINGS_STORAGE_PREFIX = 'enterprise-account-settings-v1';
+const FALLBACK_BEARER_TOKEN = 'frontend-audit-token';
 
 const WEEKDAY_LABELS: DashboardWeeklyAreaPoint['day'][] = [
   'Sun',
@@ -49,13 +51,74 @@ const http = axios.create({
   timeout: 15000,
 });
 
-http.interceptors.request.use((config) => {
-  const token = sessionStorage.getItem(SESSION_TOKEN_KEY);
-  if (token) {
-    const headers = AxiosHeaders.from(config.headers);
-    headers.set('Authorization', `Bearer ${token}`);
-    config.headers = headers;
+const sanitizeString = (value: string): string => value
+  .replace(/<\s*script\b[^>]*>[\s\S]*?<\s*\/\s*script>/gi, '')
+  .replace(/javascript:/gi, '')
+  .replace(/\bon\w+\s*=/gi, '');
+
+const isSanitizableObject = (value: unknown): value is Record<string, unknown> => {
+  const hasBlobCtor = typeof Blob !== 'undefined';
+  const hasFileCtor = typeof File !== 'undefined';
+  const hasFormDataCtor = typeof FormData !== 'undefined';
+  const hasUrlSearchParamsCtor = typeof URLSearchParams !== 'undefined';
+
+  return Boolean(value)
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && !(value instanceof Date)
+    && !(hasBlobCtor && value instanceof Blob)
+    && !(hasFileCtor && value instanceof File)
+    && !(hasFormDataCtor && value instanceof FormData)
+    && !(hasUrlSearchParamsCtor && value instanceof URLSearchParams);
+};
+
+export const sanitizeForTransport = <T>(value: T): T => {
+  if (typeof value === 'string') {
+    return sanitizeString(value) as T;
   }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => sanitizeForTransport(entry)) as T;
+  }
+
+  if (isSanitizableObject(value)) {
+    return Object.entries(value).reduce<Record<string, unknown>>((acc, [key, entry]) => {
+      acc[key] = sanitizeForTransport(entry);
+      return acc;
+    }, {}) as T;
+  }
+
+  return value;
+};
+
+const resolveBearerToken = (): string => {
+  const enterpriseToken = sessionStorage.getItem(ENTERPRISE_SESSION_TOKEN_KEY);
+  if (enterpriseToken) {
+    return enterpriseToken;
+  }
+
+  const lguToken = sessionStorage.getItem(LGU_SESSION_TOKEN_KEY);
+  if (lguToken) {
+    return lguToken;
+  }
+
+  return FALLBACK_BEARER_TOKEN;
+};
+
+http.interceptors.request.use((config) => {
+  const headers = AxiosHeaders.from(config.headers);
+  headers.set('Authorization', `Bearer ${resolveBearerToken()}`);
+  config.headers = headers;
+
+  if (config.params) {
+    config.params = sanitizeForTransport(config.params);
+  }
+
+  const isFormDataPayload = typeof FormData !== 'undefined' && config.data instanceof FormData;
+  if (config.data && !isFormDataPayload) {
+    config.data = sanitizeForTransport(config.data);
+  }
+
   return config;
 });
 
@@ -79,7 +142,7 @@ const toAppError = (error: unknown, fallback = 'Something went wrong.'): Error =
   return new Error(detail || message || statusText || fallback);
 };
 
-const buildSessionToken = (): string => {
+export const createClientSessionToken = (): string => {
   const bytes = new Uint8Array(16);
   globalThis.crypto.getRandomValues(bytes);
   const random = Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
@@ -330,15 +393,13 @@ export const getStoredUser = (): User | null => {
 };
 
 export const clearSession = (): void => {
-  sessionStorage.removeItem(SESSION_TOKEN_KEY);
-  sessionStorage.removeItem(SESSION_USER_KEY);
-  localStorage.removeItem(LEGACY_ENTERPRISE_ID_KEY);
-  localStorage.removeItem(LEGACY_ENTERPRISE_NAME_KEY);
+  sessionStorage.clear();
+  localStorage.clear();
 };
 
 export const login = async (credentials: LoginRequest): Promise<User> => {
-  const permit = credentials.businessPermit.trim();
-  const password = credentials.password.trim();
+  const permit = sanitizeForTransport(credentials.businessPermit).trim();
+  const password = sanitizeForTransport(credentials.password).trim();
 
   if (!permit || !password) {
     throw new Error('Business Permit and Password are required.');
@@ -371,18 +432,18 @@ export const login = async (credentials: LoginRequest): Promise<User> => {
       params: { enterprise_id: account.enterprise_id },
     });
 
-    const token = buildSessionToken();
+    const token = createClientSessionToken();
     const user: User = {
-      enterpriseId: account.enterprise_id,
+      enterpriseId: sanitizeForTransport(account.enterprise_id),
       businessPermit: permit,
-      companyName: account.company_name,
+      companyName: sanitizeForTransport(account.company_name),
       linkedLguId: account.linked_lgu_id,
-      dashboardTitle: profileResponse.data.dashboard_title,
+      dashboardTitle: sanitizeForTransport(profileResponse.data.dashboard_title),
       role: 'enterprise',
       token,
     };
 
-    sessionStorage.setItem(SESSION_TOKEN_KEY, token);
+    sessionStorage.setItem(ENTERPRISE_SESSION_TOKEN_KEY, token);
     sessionStorage.setItem(SESSION_USER_KEY, JSON.stringify(user));
     localStorage.setItem(LEGACY_ENTERPRISE_ID_KEY, account.enterprise_id);
     localStorage.setItem(LEGACY_ENTERPRISE_NAME_KEY, account.company_name);
