@@ -17,8 +17,9 @@ import {
 import type { EnterpriseOutletContext } from '@/components/layout/EnterpriseShell';
 import ErrorState from '@/components/ui/ErrorState';
 import LoadingState from '@/components/ui/LoadingState';
+import { readEnterpriseInfractions, subscribePortalBridge } from '@/lib/portalBridge';
 import { fetchDashboardLayoutData } from '@/services/api';
-import type { DashboardLayoutData } from '@/types';
+import type { DashboardLayoutData, LguInfractionRecord } from '@/types';
 
 const numberFormatter = new Intl.NumberFormat('en-PH');
 
@@ -34,6 +35,7 @@ const RESIDENCE_COLORS = ['#79AE6F', '#346739', '#9FCB98'] as const;
 export default function DashboardView(): JSX.Element {
   const { user } = useOutletContext<EnterpriseOutletContext>();
   const [layoutData, setLayoutData] = useState<DashboardLayoutData | null>(null);
+  const [infractions, setInfractions] = useState<LguInfractionRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,6 +58,15 @@ export default function DashboardView(): JSX.Element {
     void loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    const refreshInfractions = (): void => {
+      setInfractions(readEnterpriseInfractions(user.enterpriseId));
+    };
+
+    refreshInfractions();
+    return subscribePortalBridge(refreshInfractions);
+  }, [user.enterpriseId]);
+
   if (loading) {
     return <LoadingState label="Loading enterprise dashboard..." />;
   }
@@ -76,6 +87,22 @@ export default function DashboardView(): JSX.Element {
         <h2 className="text-3xl font-bold text-brand-dark">{dashboardTitle}</h2>
         <p className="text-xl text-brand-dark/80">{layoutData.timestampLabel}</p>
       </header>
+
+      {infractions.length ? (
+        <section className="rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 shadow-sm">
+          <p className="text-xs font-bold uppercase tracking-wide text-rose-700">Official Warning Record</p>
+          <p className="mt-1 text-sm font-semibold text-rose-800">
+            You currently have {infractions.length} LGU compliance warning record(s).
+          </p>
+          <ul className="mt-2 space-y-1 text-xs text-rose-800">
+            {infractions.slice(0, 3).map((record) => (
+              <li key={record.id}>
+                • {record.period} — {record.type}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <section className="grid gap-3 md:grid-cols-3">
         <article className="rounded-2xl border border-brand-light bg-brand-cream p-4 shadow-sm">

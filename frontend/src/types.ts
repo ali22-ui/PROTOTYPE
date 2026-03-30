@@ -543,3 +543,315 @@ export interface ApiMutationResult {
   success: boolean;
   message: string;
 }
+
+export type LguSubmissionStatus = 'SUBMITTED' | 'PENDING';
+
+export type LguComplianceNoticeStatus = 'open' | 'remind' | 'warn' | 'renotify';
+
+export type LguReportingControlStatus = LguComplianceNoticeStatus | 'closed';
+
+export type LguReportingWindowStatus =
+  | 'OPEN'
+  | 'REMIND'
+  | 'WARN'
+  | 'RENOTIFY'
+  | 'CLOSED'
+  | 'SUBMITTED'
+  | string;
+
+export type LguEnterpriseStatus = 'Active' | 'Under Review' | 'Pending Renewal' | string;
+
+export type LguComplianceActionType = 'OPEN' | 'REMIND' | 'WARN' | 'RENOTIFY';
+
+export type LguInfractionSeverity = 'warning' | 'strike';
+
+export interface LguInfractionRecord {
+  id: string;
+  period: string;
+  date: string;
+  type: string;
+  severity: LguInfractionSeverity;
+  source: 'LGU_CLOSE_REPORTING_WINDOW' | string;
+  note?: string;
+}
+
+export interface LguGeoPoint {
+  lat: number;
+  lng: number;
+}
+
+export interface LguBarangay {
+  id: string;
+  name: string;
+  center: LguGeoPoint;
+  coordinates: LguGeoPoint[];
+  enterpriseCount: number;
+}
+
+export interface LguHeatPoint extends LguGeoPoint {
+  weight: number;
+}
+
+export interface LguBarangaysResponse {
+  barangays: LguBarangay[];
+  heatmap: LguHeatPoint[];
+}
+
+export interface LguBarangaysGeoJsonFeature {
+  type: 'Feature';
+  properties: {
+    id: string;
+    name: string;
+  };
+  geometry: {
+    type: 'Polygon' | 'MultiPolygon';
+    coordinates: number[][][] | number[][][][];
+  };
+}
+
+export interface LguBarangaysGeoJsonResponse {
+  type: 'FeatureCollection';
+  features: LguBarangaysGeoJsonFeature[];
+}
+
+export interface LguOverviewResponse {
+  city: string;
+  zip: string;
+  date: string;
+  metrics: {
+    totalPeopleToday: number;
+    totalVisitors: number;
+    totalTourists: number;
+    currentlyInside: number;
+  };
+  sparkline: {
+    totalPeopleToday: number[];
+    totalVisitors: number[];
+    totalTourists: number[];
+    currentlyInside: number[];
+  };
+  recentActivities: string[];
+  peakHour: Array<{
+    time: string;
+    value: number;
+  }>;
+}
+
+export interface LguLogEntry {
+  id: string;
+  timestamp: string;
+  source: string;
+  category: string;
+  message: string;
+  severity: 'Info' | 'Warning' | 'Error' | string;
+}
+
+export interface LguLogsResponse {
+  logs: LguLogEntry[];
+}
+
+export interface LguReportsDashboardDemographic {
+  name: string;
+  value: number;
+}
+
+export interface LguReportDashboardItem {
+  id: string;
+  business: string;
+  status: string;
+  type: string;
+  submittedBy: string;
+  submittedAt: string;
+  summary: string;
+}
+
+export interface LguReportsDashboardResponse {
+  quarterlyVisitorDemographics: LguReportsDashboardDemographic[];
+  submittedReports: LguReportDashboardItem[];
+}
+
+export interface LguEnterpriseNode {
+  id: number;
+  name: string;
+  barangay: string;
+  type: string;
+  status: LguEnterpriseStatus;
+  businessId: string;
+}
+
+export interface LguBarangayEnterprisesResponse {
+  barangay: string;
+  enterprises: LguEnterpriseNode[];
+}
+
+export interface LguEnterpriseAnalyticsResponse {
+  enterprise: LguEnterpriseNode;
+  analytics: {
+    demographics: Array<{
+      name: string;
+      value: number;
+    }>;
+    residency: Array<{
+      name: string;
+      value: number;
+    }>;
+    visitorTrends: Array<{
+      month: string;
+      visitors: number;
+    }>;
+    reportHistory: Array<{
+      date: string;
+      type: string;
+      status: string;
+    }>;
+  };
+}
+
+export interface LguEnterpriseAnalyticsSummary {
+  monthlyVisitors: number;
+  topDemographic: string;
+  trendDirection: 'UP' | 'DOWN' | 'FLAT';
+}
+
+export interface LguEnterpriseAnalyticsDetail extends LguEnterpriseAnalyticsSummary {
+  demographics: Array<{
+    name: string;
+    value: number;
+  }>;
+  totalTourists: number;
+  localResidents: number;
+  nonLocalResidents: number;
+  maleCount: number;
+  femaleCount: number;
+  maleRatioPct: number;
+  femaleRatioPct: number;
+}
+
+export interface LguReportWindow {
+  enterprise_id: string;
+  period: string;
+  status: LguReportingWindowStatus;
+  opened_at: string;
+  opened_by: string;
+}
+
+export interface LguOverviewAdminResponse {
+  lgu_id: string;
+  name: string;
+  total_linked_enterprises: number;
+  submitted_reports_current_period: number;
+  submission_completion_rate_pct: number;
+  active_reporting_window: LguReportWindow;
+}
+
+export interface LguEnterpriseAccount {
+  enterprise_id: string;
+  company_name: string;
+  linked_lgu_id: string;
+  barangay?: string;
+  reporting_window_status: LguReportingWindowStatus;
+  has_submitted_for_period: boolean;
+  infraction_count?: number;
+  latest_infraction?: LguInfractionRecord | null;
+  period?: string;
+  dashboard_title?: string;
+  logo_url?: string;
+}
+
+export interface LguEnterpriseAccountsResponse {
+  period: string;
+  accounts: LguEnterpriseAccount[];
+}
+
+export interface LguEnterpriseAccountDraft {
+  enterprise_id: string;
+  company_name: string;
+  linked_lgu_id: string;
+  username: string;
+  temporary_password: string;
+  barangay: string;
+  contact_email: string;
+}
+
+export interface LguMutationResult {
+  success: boolean;
+  message: string;
+}
+
+export interface LguReportPack {
+  report_id: string;
+  enterprise_id: string;
+  enterprise_name: string;
+  linked_lgu_id?: string;
+  period: {
+    month: string;
+    start?: string;
+    end?: string;
+  };
+  submitted_at: string;
+  submitted_by_user_id?: string;
+  kpis?: {
+    total_visitors_mtd?: number;
+    trend_pct?: number;
+    avg_dwell?: string;
+    peak_visitor_hours?: string[];
+  };
+  charts?: {
+    visitor_residence_breakdown?: Record<string, number>;
+    daily_summary?: Array<{
+      date: string;
+      total_visitors: number;
+      avg_dwell_minutes: number;
+      peak_hour: string;
+    }>;
+    detailed_detection_rows?: DetailedDetectionRow[];
+  };
+}
+
+export interface LguReportPacksResponse {
+  reports: LguReportPack[];
+}
+
+export interface LguAuthorityPackage {
+  authority_package_id: string;
+  generated_at: string;
+  classification: string;
+  executive_summary: {
+    enterprise: string;
+    period: string;
+    total_visitors: number;
+    average_dwell: string;
+    top_peak_hours: string[];
+  };
+  compliance_notes: string[];
+  attachments: string[];
+}
+
+export interface LguEnterpriseComplianceActionRequest {
+  enterpriseId: string;
+  period: string;
+  action: LguComplianceActionType;
+  message?: string;
+}
+
+export interface LguEnterpriseComplianceActionResponse {
+  success: boolean;
+  message: string;
+  enterpriseId: string;
+  action: LguComplianceActionType;
+  windowStatus: LguReportingWindowStatus;
+  triggeredAt: string;
+}
+
+export interface LguSettingsPayload {
+  adminUsername: string;
+  adminEmail: string;
+  currentPassword: string;
+  newPassword: string;
+  confirmNewPassword: string;
+  preferences: {
+    systemAlerts: boolean;
+    complianceDigest: boolean;
+    darkMode: boolean;
+  };
+}

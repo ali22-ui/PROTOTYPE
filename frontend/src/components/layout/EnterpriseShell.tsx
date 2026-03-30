@@ -1,7 +1,10 @@
-import { Archive, Camera, ClipboardList, LayoutDashboard, LogOut, ScrollText, Settings } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { Archive, BellRing, Camera, ClipboardList, LayoutDashboard, LogOut, ScrollText, Settings } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
-import type { User } from '@/types';
+import { getReportingControlState, subscribePortalBridge } from '@/lib/portalBridge';
+import { getComplianceStatusTheme, toReportingWindowStatus } from '@/lib/reportingStatus';
+import type { LguReportingControlStatus, User } from '@/types';
 
 const navItems: Array<{ to: string; label: string; icon: LucideIcon }> = [
   { to: '/enterprise/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -22,6 +25,30 @@ interface EnterpriseShellProps {
 }
 
 export default function EnterpriseShell({ user, onLogout }: EnterpriseShellProps): JSX.Element {
+  const [reportingNotice, setReportingNotice] = useState(() => getReportingControlState());
+
+  const refreshReportingNotice = useCallback((): void => {
+    setReportingNotice(getReportingControlState());
+  }, []);
+
+  useEffect(() => {
+    refreshReportingNotice();
+  }, [refreshReportingNotice]);
+
+  useEffect(() => {
+    return subscribePortalBridge(() => {
+      refreshReportingNotice();
+    });
+  }, [refreshReportingNotice]);
+
+  const isNoticeVisible = Boolean(
+    reportingNotice
+    && (reportingNotice.scope === 'ALL' || reportingNotice.enterpriseId === user.enterpriseId),
+  );
+  const noticeStatus: LguReportingControlStatus = reportingNotice?.status
+    || (reportingNotice?.isOpen ? 'open' : 'closed');
+  const noticeTheme = getComplianceStatusTheme(noticeStatus);
+
   return (
     <div className="flex h-screen overflow-hidden bg-brand-cream text-brand-dark">
       <aside className="sticky top-0 flex h-screen w-[280px] flex-shrink-0 flex-col overflow-hidden border-r border-[#79AE6F]/55 bg-brand-dark bg-gradient-to-b from-[#214f2a] via-[#1c4527] to-[#173a20] text-white shadow-2xl shadow-black/20">
@@ -67,6 +94,24 @@ export default function EnterpriseShell({ user, onLogout }: EnterpriseShellProps
       </aside>
 
       <main className="flex-1 min-w-0 h-screen overflow-y-auto bg-brand-cream p-5 md:p-6 lg:p-7">
+        {isNoticeVisible ? (
+          <section
+            className={`mb-4 flex items-start gap-2 rounded-2xl border px-4 py-3 shadow-sm ${noticeTheme.bannerClass}`}
+          >
+            <BellRing size={16} className="mt-0.5" />
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide">LGU Reporting Notice</p>
+              <p className="text-sm font-medium">
+                {reportingNotice?.message
+                  || `${noticeTheme.title}.`}
+              </p>
+              <p className={`text-xs ${noticeTheme.subtleTextClass}`}>
+                Period: {reportingNotice?.period} • Status: {toReportingWindowStatus(noticeStatus)}
+              </p>
+            </div>
+          </section>
+        ) : null}
+
         <Outlet context={{ user } satisfies EnterpriseOutletContext} />
       </main>
     </div>

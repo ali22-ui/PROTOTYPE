@@ -4,8 +4,16 @@ import LguComplianceModal from '../../components/reports/LguComplianceModal';
 import type { EnterpriseOutletContext } from '@/components/layout/EnterpriseShell';
 import ErrorState from '@/components/ui/ErrorState';
 import LoadingState from '@/components/ui/LoadingState';
+import {
+  getLegacyReportingStatus,
+  getReportingControlState,
+  hasSubmissionRecordForEnterprisePeriod,
+  isReportingWindowOpenForEnterprise,
+  subscribePortalBridge,
+} from '@/lib/portalBridge';
+import { getComplianceStatusTheme, toReportingWindowStatus } from '@/lib/reportingStatus';
 import { fetchCameraLogs, submitMonthlyReport } from '@/services/api';
-import type { CameraLog } from '@/types';
+import type { CameraLog, LguReportingControlStatus } from '@/types';
 
 const CSV_COLUMNS: Array<{ key: keyof CameraLog | 'duration_hours'; label: string }> = [
   { key: 'uniqueId', label: 'unique_id' },
@@ -58,6 +66,24 @@ export default function ReportCenterView(): JSX.Element {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [submissionMessage, setSubmissionMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [reportingNotice, setReportingNotice] = useState(() => getReportingControlState());
+  const [legacyReportingStatus, setLegacyReportingStatus] = useState<LguReportingControlStatus | null>(() =>
+    getLegacyReportingStatus(),
+  );
+  const [isReportingOpen, setIsReportingOpen] = useState<boolean>(false);
+  const [hasSubmittedForMonth, setHasSubmittedForMonth] = useState<boolean>(false);
+
+  const isNoticeTargetedToEnterpriseAndPeriod = Boolean(
+    reportingNotice
+    && reportingNotice.period === month
+    && (reportingNotice.scope === 'ALL' || reportingNotice.enterpriseId === user.enterpriseId),
+  );
+  const activeNoticeStatus: LguReportingControlStatus | null = isNoticeTargetedToEnterpriseAndPeriod
+    ? reportingNotice?.status || (reportingNotice?.isOpen ? 'open' : 'closed')
+    : null;
+  const effectiveNoticeStatus: LguReportingControlStatus | null =
+    activeNoticeStatus || (legacyReportingStatus === 'closed' ? 'closed' : null);
+  const activeNoticeTheme = getComplianceStatusTheme(effectiveNoticeStatus);
 
   const loadLogs = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -77,6 +103,26 @@ export default function ReportCenterView(): JSX.Element {
   useEffect(() => {
     void loadLogs();
   }, [loadLogs]);
+
+  const refreshBridgeState = useCallback((): void => {
+    setReportingNotice(getReportingControlState());
+    const legacyStatus = getLegacyReportingStatus();
+    setLegacyReportingStatus(legacyStatus);
+
+    const windowOpen = isReportingWindowOpenForEnterprise(user.enterpriseId, month);
+    setIsReportingOpen(legacyStatus === 'closed' ? false : windowOpen);
+    setHasSubmittedForMonth(hasSubmissionRecordForEnterprisePeriod(user.enterpriseId, month));
+  }, [month, user.enterpriseId]);
+
+  useEffect(() => {
+    refreshBridgeState();
+  }, [refreshBridgeState]);
+
+  useEffect(() => {
+    return subscribePortalBridge(() => {
+      refreshBridgeState();
+    });
+  }, [refreshBridgeState]);
 
   const summary = useMemo(() => {
     const total = logs.reduce((sum, row) => sum + row.totalCount, 0);
@@ -104,12 +150,24 @@ export default function ReportCenterView(): JSX.Element {
       return;
     }
 
+    if (!isReportingOpen) {
+      setSubmissionMessage('Submission is locked. Wait for LGU to open the reporting window.');
+      return;
+    }
+
+    if (hasSubmittedForMonth) {
+      setSubmissionMessage('Already submitted for this reporting month.');
+      return;
+    }
+
     setSubmitting(true);
     setSubmissionMessage(null);
 
     try {
       const result = await submitMonthlyReport(user.enterpriseId, month, logs);
       setSubmissionMessage(`${result.message} (${result.reportId})`);
+      setHasSubmittedForMonth(true);
+      refreshBridgeState();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to submit report.';
       setSubmissionMessage(message);
@@ -146,6 +204,33 @@ export default function ReportCenterView(): JSX.Element {
             />
           </label>
         </div>
+
+        {effectiveNoticeStatus ? (
+          <div
+            className={`mt-3 rounded-xl border px-3 py-2 text-xs ${activeNoticeTheme.bannerClass}`}
+          >
+            <p className="font-semibold">
+              LGU Notice: {activeNoticeTheme.title} ({reportingNotice?.period || month})
+            </p>
+            <p className="mt-0.5">
+              {reportingNotice?.message
+                || (effectiveNoticeStatus === 'closed'
+                  ? 'Notice: The LGU has closed the monthly reporting window.'
+                  : 'LGU reporting status updated.')}
+              {' '}
+              <span className={activeNoticeTheme.subtleTextClass}>
+                ({reportingNotice?.triggeredAt ? new Date(reportingNotice.triggeredAt).toLocaleString('en-PH') : 'just now'})
+              </span>
+            </p>
+            <p className={`mt-0.5 font-semibold ${activeNoticeTheme.subtleTextClass}`}>
+              Status: {toReportingWindowStatus(effectiveNoticeStatus)}
+            </p>
+          </div>
+        ) : (
+          <p className="mt-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            Reporting window is currently closed. Submit action unlocks once LGU triggers report collection.
+          </p>
+        )}
       </header>
 
       <section className="grid gap-4 md:grid-cols-3">
@@ -182,10 +267,20 @@ export default function ReportCenterView(): JSX.Element {
           <button
             type="button"
             onClick={() => void handleSubmitMonthlyReport()}
-            disabled={submitting}
-            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70"
+            disabled={submitting || !isReportingOpen || hasSubmittedForMonth}
+            className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70 ${
+              hasSubmittedForMonth
+                ? 'bg-slate-400'
+                : 'bg-emerald-600 hover:bg-emerald-700'
+            }`}
           >
-            {submitting ? 'Submitting...' : 'Submit to LGU'}
+            {submitting
+              ? 'Submitting...'
+              : hasSubmittedForMonth
+                ? 'Already Submitted'
+                : isReportingOpen
+                  ? 'Submit to LGU'
+                  : 'Submit Locked'}
           </button>
         </div>
 

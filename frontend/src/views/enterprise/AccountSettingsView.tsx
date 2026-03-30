@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ShieldCheck, SlidersHorizontal, UserRound } from 'lucide-react';
 import { useOutletContext } from 'react-router-dom';
 import type { EnterpriseOutletContext } from '@/components/layout/EnterpriseShell';
+import { readEnterpriseInfractions, subscribePortalBridge } from '@/lib/portalBridge';
 import {
   fetchEnterpriseAccountSettings,
   saveEnterpriseAccountProfile,
@@ -10,6 +11,7 @@ import {
 } from '@/services/api';
 import type {
   EnterpriseAccountProfileSettings,
+  LguInfractionRecord,
   EnterprisePasswordUpdatePayload,
   EnterpriseSystemPreferences,
 } from '@/types';
@@ -35,6 +37,7 @@ export default function AccountSettingsView(): JSX.Element {
 
   const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
   const [loading, setLoading] = useState(true);
+  const [infractions, setInfractions] = useState<LguInfractionRecord[]>([]);
 
   const [profile, setProfile] = useState<EnterpriseAccountProfileSettings>({
     businessPermit: user.businessPermit,
@@ -107,6 +110,15 @@ export default function AccountSettingsView(): JSX.Element {
       }
     };
   }, [pushToast, user.businessPermit, user.enterpriseId]);
+
+  useEffect(() => {
+    const refreshInfractions = (): void => {
+      setInfractions(readEnterpriseInfractions(user.enterpriseId));
+    };
+
+    refreshInfractions();
+    return subscribePortalBridge(refreshInfractions);
+  }, [user.enterpriseId]);
 
   const handleSaveProfile = async (): Promise<void> => {
     if (!isValidEmail(profile.contactEmail)) {
@@ -259,6 +271,22 @@ export default function AccountSettingsView(): JSX.Element {
       </aside>
 
       <section className="rounded-2xl border border-brand-light bg-white p-5 shadow-sm">
+        {infractions.length ? (
+          <section className="mb-4 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3">
+            <p className="text-xs font-bold uppercase tracking-wide text-rose-700">Official Warning Record</p>
+            <p className="mt-1 text-sm font-semibold text-rose-800">
+              {infractions.length} compliance warning record(s) found for this account.
+            </p>
+            <ul className="mt-2 space-y-1 text-xs text-rose-800">
+              {infractions.slice(0, 3).map((record) => (
+                <li key={record.id}>
+                  • {record.period} — {record.type}
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
         {loading ? (
           <div className="grid min-h-[320px] place-items-center text-sm text-brand-dark/80">
             Loading account settings...

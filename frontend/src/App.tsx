@@ -12,30 +12,30 @@ import CameraMonitoringView from '@/views/enterprise/CameraMonitoringView';
 import DashboardView from '@/views/enterprise/DashboardView';
 import ReportCenterView from '@/views/enterprise/ReportCenterView';
 
-const LguLoginView = lazy(() => import('@/features/auth/components/login-form'));
-const LguDashboardLayout = lazy(() => import('@/components/layouts/dashboard-layout'));
-const LguOverviewView = lazy(
-  () => import('@/features/lgu/overview/components/overview-dashboard'),
+const LguLoginView = lazy(() => import('@/features/lgu/master/components/LguLoginView'));
+const LguSidebarLayout = lazy(
+  () => import('@/features/lgu/master/components/LguSidebarLayout'),
 );
-const LguMapView = lazy(() => import('@/features/lgu/map/components/map-view'));
-const LguEnterprisesView = lazy(
-  () => import('@/features/lgu/enterprises/components/enterprises-list'),
+const LguOverviewView = lazy(() => import('@/features/lgu/master/views/OverviewView'));
+const LguMapView = lazy(() => import('@/features/lgu/master/views/MapView'));
+const LguEnterpriseManagementView = lazy(
+  () => import('@/features/lgu/master/views/EnterpriseManagementView'),
 );
-const LguEnterpriseAnalyticsView = lazy(
-  () => import('@/features/lgu/enterprises/components/enterprise-analytics'),
+const LguEnterpriseLogsView = lazy(
+  () => import('@/features/lgu/master/views/EnterpriseLogsView'),
 );
-const LguReportsView = lazy(
-  () => import('@/features/lgu/reports/components/reports-view'),
+const LguReportsWorkspaceView = lazy(
+  () => import('@/features/lgu/master/views/ReportsWorkspaceView'),
 );
-const LguLogsView = lazy(() => import('@/features/lgu/logs/components/logs-view'));
-const LguSettingsView = lazy(
-  () => import('@/features/lgu/settings/components/settings-view'),
-);
+const LguSettingsView = lazy(() => import('@/features/lgu/master/views/SettingsView'));
 
 export default function App(): JSX.Element {
   const [user, setUser] = useState<User | null>(() => getStoredUser());
   const [isLguAuthenticated, setIsLguAuthenticated] = useState<boolean>(
     () => localStorage.getItem('lgu-auth') === 'true',
+  );
+  const [lguAdminUsername, setLguAdminUsername] = useState<string>(
+    () => localStorage.getItem('lgu-auth-user') || 'LGU Admin',
   );
   const isGitHubPagesHost = globalThis.location.hostname.endsWith('github.io');
 
@@ -53,14 +53,18 @@ export default function App(): JSX.Element {
     setUser(null);
   };
 
-  const handleLguLogin = (): void => {
+  const handleLguLogin = (username: string): void => {
     localStorage.setItem('lgu-auth', 'true');
+    localStorage.setItem('lgu-auth-user', username || 'LGU Admin');
+    setLguAdminUsername(username || 'LGU Admin');
     setIsLguAuthenticated(true);
   };
 
   const handleLguLogout = (): void => {
     localStorage.removeItem('lgu-auth');
+    localStorage.removeItem('lgu-auth-user');
     setIsLguAuthenticated(false);
+    setLguAdminUsername('LGU Admin');
   };
 
   const appRoutes = (
@@ -73,15 +77,17 @@ export default function App(): JSX.Element {
     >
       <Routes>
         <Route
-          path="/login"
+          path="/lgu/login"
           element={
             isLguAuthenticated ? (
-              <Navigate to="/app/overview" replace />
+              <Navigate to="/lgu/overview" replace />
             ) : (
               <LguLoginView onLogin={handleLguLogin} />
             )
           }
         />
+
+        <Route path="/login" element={<Navigate to="/lgu/login" replace />} />
 
         <Route
           path="/enterprise/login"
@@ -95,27 +101,31 @@ export default function App(): JSX.Element {
         />
 
         <Route
-          path="/app"
+          path="/lgu"
           element={
             isLguAuthenticated ? (
-              <LguDashboardLayout onLogout={handleLguLogout} />
+              <LguSidebarLayout
+                onLogout={handleLguLogout}
+                adminUsername={lguAdminUsername}
+              />
             ) : (
-              <Navigate to="/login" replace />
+              <Navigate to="/lgu/login" replace />
             )
           }
         >
           <Route index element={<Navigate to="overview" replace />} />
           <Route path="overview" element={<LguOverviewView />} />
           <Route path="map" element={<LguMapView />} />
-          <Route path="enterprises" element={<LguEnterprisesView />} />
           <Route
-            path="enterprise/:enterpriseId"
-            element={<LguEnterpriseAnalyticsView />}
+            path="enterprise-management"
+            element={<LguEnterpriseManagementView />}
           />
-          <Route path="reports" element={<LguReportsView />} />
-          <Route path="logs" element={<LguLogsView />} />
+          <Route path="enterprise-logs" element={<LguEnterpriseLogsView />} />
+          <Route path="reports" element={<LguReportsWorkspaceView />} />
           <Route path="settings" element={<LguSettingsView />} />
         </Route>
+
+        <Route path="/app/*" element={<Navigate to="/lgu/overview" replace />} />
 
         <Route
           path="/enterprise"
@@ -142,8 +152,8 @@ export default function App(): JSX.Element {
                 user
                   ? '/enterprise/dashboard'
                   : isLguAuthenticated
-                    ? '/app/overview'
-                    : '/enterprise/login'
+                    ? '/lgu/overview'
+                    : '/lgu/login'
               }
               replace
             />
