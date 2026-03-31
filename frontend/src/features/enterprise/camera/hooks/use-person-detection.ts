@@ -4,6 +4,10 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
+import {
+  MEDIAPIPE_PERSON_MODEL_URL,
+  MEDIAPIPE_WASM_BASE_URL,
+} from '../constants/model-assets';
 import type {
   BBoxPercent,
   PersonTrackDetection,
@@ -118,20 +122,26 @@ export function usePersonDetection({
       const vision = (await import('@mediapipe/tasks-vision')) as unknown as VisionModule;
       const { ObjectDetector, FilesetResolver } = vision;
 
-      const wasmFileset = await FilesetResolver.forVisionTasks(
-        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm',
-      );
+      const wasmFileset = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM_BASE_URL);
 
-      detectorRef.current = await ObjectDetector.createFromOptions(wasmFileset, {
+      const createDetector = async (
+        delegate: 'GPU' | 'CPU',
+      ): Promise<ObjectDetectorLike> => ObjectDetector.createFromOptions(wasmFileset, {
         baseOptions: {
-          modelAssetPath:
-            'https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite',
-          delegate: 'GPU',
+          modelAssetPath: MEDIAPIPE_PERSON_MODEL_URL,
+          delegate,
         },
         scoreThreshold: confidenceThreshold,
         categoryAllowlist: ['person'],
         runningMode: 'VIDEO',
       });
+
+      try {
+        detectorRef.current = await createDetector('GPU');
+      } catch (gpuError) {
+        console.warn('MediaPipe GPU delegate failed, falling back to CPU:', gpuError);
+        detectorRef.current = await createDetector('CPU');
+      }
 
       setState(DetectionState.READY);
       return true;

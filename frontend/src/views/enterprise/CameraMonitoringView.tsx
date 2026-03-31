@@ -113,15 +113,15 @@ export default function CameraMonitoringView(): JSX.Element {
             </h3>
             <div className="mt-3 space-y-2 text-sm text-brand-dark">
               <div className="flex items-center justify-between">
-                <span>Camera</span>
+                <span>Camera Transport</span>
                 <span className="font-semibold">
                   {isCameraRunning ? 'Connected' : 'Disconnected'}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span>Person Detection</span>
+                <span>Recent Detection Activity</span>
                 <span className="font-semibold">
-                  {hasDetectionActivity ? 'Running' : 'Idle'}
+                  {hasDetectionActivity ? 'Active' : 'Idle'}
                 </span>
               </div>
               <div className="flex items-center justify-between">

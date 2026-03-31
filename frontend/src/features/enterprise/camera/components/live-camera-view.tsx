@@ -32,8 +32,11 @@ import type { EnhancedTrack } from '../hooks/use-deduplication';
 
 const BATCH_INTERVAL_MS = 5000;
 const MAX_BATCH_SIZE = 50;
+const FRAME_STALL_TIMEOUT_MS = 3000;
 const BRAND_DARK = '#5C6F2B';
 const BRAND_ACCENT = '#DE802B';
+
+type StreamFrameState = 'idle' | 'receiving' | 'stalled' | 'blocked';
 
 type OverlayDetection = EnhancedTrack & {
   sex?: 'male' | 'female' | 'unknown';
@@ -55,9 +58,12 @@ export default function LiveCameraView({
   const autoInitRef = useRef(false);
   const batchBufferRef = useRef<DetectionBatchEvent[]>([]);
   const lastBatchTimeRef = useRef(Date.now());
+  const lastFrameAtRef = useRef(0);
+  const lastVideoTimeRef = useRef(0);
 
   const [, setIsDetectionActive] = useState(false);
   const [detectionLogs, setDetectionLogs] = useState<string[]>([]);
+  const [frameState, setFrameState] = useState<StreamFrameState>('idle');
   const [stats, setStats] = useState({
     totalDetections: 0,
     maleCount: 0,
@@ -110,13 +116,76 @@ export default function LiveCameraView({
         videoElement.srcObject = stream;
       }
       void videoElement.play().catch(() => {
-        // Ignore auto-play race conditions while route transitions happen.
+        setFrameState('blocked');
       });
       return;
     }
 
+    lastFrameAtRef.current = 0;
+    lastVideoTimeRef.current = 0;
+    setFrameState('idle');
     videoElement.srcObject = null;
   }, [stream]);
+
+  useEffect(() => {
+    if (!isStreaming) {
+      setFrameState('idle');
+      return;
+    }
+
+    const videoElement = videoRef.current;
+    if (!videoElement) {
+      setFrameState('stalled');
+      return;
+    }
+
+    const markFrameReceived = (): void => {
+      lastFrameAtRef.current = Date.now();
+      setFrameState((prev) => (prev === 'receiving' ? prev : 'receiving'));
+    };
+
+    const markBlocked = (): void => {
+      setFrameState('blocked');
+    };
+
+    videoElement.addEventListener('loadeddata', markFrameReceived);
+    videoElement.addEventListener('playing', markFrameReceived);
+    videoElement.addEventListener('timeupdate', markFrameReceived);
+    videoElement.addEventListener('error', markBlocked);
+
+    const intervalId = window.setInterval(() => {
+      if (!videoRef.current) {
+        setFrameState('stalled');
+        return;
+      }
+
+      const now = Date.now();
+      const currentTime = videoRef.current.currentTime;
+
+      if (videoRef.current.readyState >= 2 && currentTime > lastVideoTimeRef.current + 0.01) {
+        lastVideoTimeRef.current = currentTime;
+        markFrameReceived();
+        return;
+      }
+
+      if (lastFrameAtRef.current === 0) {
+        setFrameState('stalled');
+        return;
+      }
+
+      if (now - lastFrameAtRef.current > FRAME_STALL_TIMEOUT_MS) {
+        setFrameState((prev) => (prev === 'blocked' ? prev : 'stalled'));
+      }
+    }, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+      videoElement.removeEventListener('loadeddata', markFrameReceived);
+      videoElement.removeEventListener('playing', markFrameReceived);
+      videoElement.removeEventListener('timeupdate', markFrameReceived);
+      videoElement.removeEventListener('error', markBlocked);
+    };
+  }, [isStreaming]);
 
   const handleStartCamera = useCallback(async (): Promise<void> => {
     const success = await startCamera();
@@ -521,6 +590,44 @@ export default function LiveCameraView({
           ? 'Loading'
           : 'Idle';
 
+  const frameStatusLabel =
+    frameState === 'receiving'
+      ? 'Receiving'
+      : frameState === 'stalled'
+        ? 'Stalled'
+        : frameState === 'blocked'
+          ? 'Blocked'
+          : 'Idle';
+
+  const transportStatusLabel =
+    cameraState === CameraState.REQUESTING
+      ? 'Connecting'
+      : isStreaming
+        ? 'Connected'
+        : cameraState === CameraState.ERROR
+          ? 'Error'
+          : 'Disconnected';
+
+  const overallStatusLabel =
+    !isStreaming
+      ? 'Offline'
+      : frameState === 'receiving'
+        ? 'Connected'
+        : frameState === 'blocked'
+          ? 'Blocked'
+          : 'Degraded';
+
+  const aiStatusLabel =
+    detectionState === DetectionState.ERROR
+    || deduplication.faceEmbeddingState === FaceEmbeddingState.ERROR
+      ? 'Error'
+      : detectionState === DetectionState.LOADING
+      || deduplication.faceEmbeddingState === FaceEmbeddingState.LOADING
+        ? 'Loading'
+        : isClassificationReady && deduplication.isInitialized
+          ? 'Ready'
+          : 'Idle';
+
   return (
     <div className="space-y-3">
       <article className="rounded-xl border border-brand-mid/70 bg-white p-3 shadow-sm">
@@ -671,14 +778,26 @@ export default function LiveCameraView({
             </h4>
             <div className="mt-3 space-y-2 text-sm text-brand-dark">
               <div className="flex items-center justify-between">
-                <span>Camera</span>
+                <span>Overall</span>
+                <span className="font-semibold">{overallStatusLabel}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Transport</span>
                 <span className="font-semibold">
-                  {isStreaming ? 'Connected' : 'Disconnected'}
+                  {transportStatusLabel}
                 </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Frame State</span>
+                <span className="font-semibold">{frameStatusLabel}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span>Person Detection</span>
                 <span className="font-semibold">{detectionStatusLabel}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>AI Readiness</span>
+                <span className="font-semibold">{aiStatusLabel}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span>Gender Classification</span>

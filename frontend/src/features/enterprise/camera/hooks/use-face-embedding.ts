@@ -4,6 +4,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { BBoxPercent } from '../types';
+import { FACE_API_MODEL_BASE_URL } from '../constants/model-assets';
 
 /**
  * Face embedding state enum.
@@ -30,10 +31,10 @@ const DEFAULT_CONFIG = {
 };
 
 /**
- * CDN URLs for face-api.js models.
+ * Local URLs for face-api.js models.
  */
 const MODEL_URLS = {
-  base: 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model',
+  base: FACE_API_MODEL_BASE_URL,
 };
 
 export interface UseFaceEmbeddingOptions {
