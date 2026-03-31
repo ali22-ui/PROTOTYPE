@@ -37,7 +37,7 @@ export default function DashboardLayout({ onLogout }) {
         <aside className="flex flex-col bg-primary-900 text-white shadow-xl">
           <div className="border-b border-blue-800 px-4 py-4.5">
             <div className="flex items-center gap-3">
-              <div className="relative grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-sky-400 via-blue-500 to-indigo-700 ring-2 ring-white/20 shadow-lg shadow-blue-900/35">
+              <div className="relative grid h-12 w-12 place-items-center rounded-2xl bg-linear-to-br from-sky-400 via-blue-500 to-indigo-700 ring-2 ring-white/20 shadow-lg shadow-blue-900/35">
                 <Shield size={18} className="absolute top-2.5 text-white/95" />
                 <span className="mt-3 text-[10px] font-black tracking-wide text-white">
                   LGU
@@ -65,7 +65,7 @@ export default function DashboardLayout({ onLogout }) {
                 className={({ isActive }) =>
                   `flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-[15px] transition ${
                     isActive
-                      ? 'bg-gradient-to-r from-blue-700 to-blue-600 text-white shadow'
+                      ? 'bg-linear-to-r from-blue-700 to-blue-600 text-white shadow'
                       : 'text-blue-100 hover:bg-blue-800'
                   }`
                 }

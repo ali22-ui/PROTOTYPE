@@ -1,6 +1,5 @@
 import asyncio
 from datetime import datetime
-import random
 from typing import Generator
 
 from fastapi import WebSocket
@@ -15,65 +14,67 @@ from app.services.ip_camera_service import (
     SourceStatus,
 )
 from app.state import runtime_store
-from domain_exceptions import DomainNotFoundError
+from domain_exceptions import DomainNotFoundError, DomainServiceUnavailableError
 
 
-def _build_camera_frame(enterprise_id: str):
-    runtime = runtime_store.get_camera_runtime()[enterprise_id]
-    runtime["frame"] += 1
-    frame = runtime["frame"]
-    base = sum(ord(ch) for ch in enterprise_id)
-    rng = random.Random(base + frame)
-
-    labels = [
-        "Male Tourist",
-        "Female Local Resident",
-        "Male Non-Local Resident",
-        "Female Tourist",
-    ]
-
-    boxes = []
-    for idx in range(4):
-        boxes.append(
-            {
-                "id": f"trk_{enterprise_id[-3:]}_{idx + 1}",
-                "label": labels[idx],
-                "x": 8 + ((frame * (idx + 1) * 3) % 70),
-                "y": 18 + (idx * 8) + rng.randint(-2, 2),
-                "w": 14 + rng.randint(2, 8),
-                "h": 32 + rng.randint(4, 10),
-            }
-        )
-
-    stamp = datetime.now().strftime("%I:%M:%S %p")
-    event = f"Frame {frame}: {', '.join(item['label'] for item in boxes)} | {stamp} PST"
-    runtime["events"].insert(0, event)
-    runtime["events"] = runtime["events"][:300]
-
+def _get_camera_frame_response(enterprise_id: str) -> dict:
+    """
+    Build camera frame response using real source state only.
+    No synthetic boxes, events, or sample videos are generated.
+    Returns explicit unavailable status when no real camera source is configured.
+    """
     profile = enterprise_repository.get_enterprise_profile(enterprise_id)
     if not profile:
         raise DomainNotFoundError("Enterprise profile not found")
 
-    return {
+    ip_service = get_ip_camera_service()
+    state = ip_service.get_source_state(enterprise_id)
+
+    camera_name = profile["cameras"][0]["name"] if profile.get("cameras") else "Camera"
+
+    # Build response with real source state only
+    response = {
         "enterprise_id": enterprise_id,
-        "frame": frame,
-        "fps": 6 + (frame % 4),
-        "active_tracks": len(boxes),
-        "status": "RUNNING",
-        "camera_name": profile["cameras"][0]["name"],
-        "sample_video_url": "https://samplelib.com/lib/preview/mp4/sample-5s.mp4",
-        "boxes": boxes,
-        "events": runtime["events"][:100],
+        "frame": 0,
+        "fps": 0,
+        "active_tracks": 0,
+        "status": "NO_SOURCE" if state.mode is None else ("RUNNING" if state.health.status == SourceStatus.ONLINE else "OFFLINE"),
+        "camera_name": camera_name,
+        "source_mode": state.mode,
+        "is_live_camera": state.mode in ("live_webcam", "ip_webcam") if state.mode else False,
+        "relay_url": state.relay_url,
+        "source_status": state.health.status.value if state.health else "unknown",
+        "last_frame_at": state.last_frame_at.isoformat() if state.last_frame_at else None,
+        "boxes": [],  # No synthetic boxes - only real detections
+        "events": [],  # No synthetic events - only real detection events
     }
+
+    # Add diagnostic info when source is unavailable
+    if state.mode is None:
+        response["diagnostic"] = {
+            "message": "No camera source selected. Please configure a camera source.",
+            "available_modes": ["live_webcam", "ip_webcam"],
+        }
+    elif state.health.status != SourceStatus.ONLINE:
+        response["diagnostic"] = {
+            "message": state.health.last_error or "Camera source is not available",
+            "last_ok_at": state.health.last_ok_at.isoformat() if state.health.last_ok_at else None,
+        }
+
+    return response
 
 
 async def _camera_broadcast_worker(enterprise_id: str):
+    """
+    Broadcast camera state to WebSocket subscribers.
+    Only sends real source state, no synthetic frames.
+    """
     subscribers = runtime_store.get_camera_subscribers()
     tasks = runtime_store.get_camera_broadcast_tasks()
     camera_runtime = runtime_store.get_camera_runtime()
     try:
         while subscribers.get(enterprise_id):
-            frame = _build_camera_frame(enterprise_id)
+            frame = _get_camera_frame_response(enterprise_id)
             camera_runtime[enterprise_id]["latest_frame"] = frame
 
             stale_clients = []
@@ -99,6 +100,10 @@ async def _ensure_camera_broadcast(enterprise_id: str):
 
 
 def get_enterprise_camera_stream(enterprise_id: str):
+    """
+    Get current camera stream state for an enterprise.
+    Returns real source state only - no synthetic frames or fallbacks.
+    """
     resolved_id = enterprise_repository.resolve_enterprise_id(enterprise_id)
     if not enterprise_repository.get_enterprise_account(resolved_id):
         raise DomainNotFoundError("Enterprise account not found")
@@ -106,26 +111,11 @@ def get_enterprise_camera_stream(enterprise_id: str):
     camera_runtime = runtime_store.get_camera_runtime()
     latest = camera_runtime[resolved_id].get("latest_frame")
     if latest:
-        return _enrich_frame_with_source(resolved_id, latest)
+        return latest
 
-    frame = _build_camera_frame(resolved_id)
+    frame = _get_camera_frame_response(resolved_id)
     camera_runtime[resolved_id]["latest_frame"] = frame
-    return _enrich_frame_with_source(resolved_id, frame)
-
-
-def _enrich_frame_with_source(enterprise_id: str, frame: dict) -> dict:
-    """Add source mode information to frame response."""
-    ip_service = get_ip_camera_service()
-    state = ip_service.get_source_state(enterprise_id)
-
-    return {
-        **frame,
-        "source_mode": state.mode,
-        "is_live_camera": state.mode in ("live_webcam", "ip_webcam"),
-        "relay_url": state.relay_url,
-        "source_status": state.health.status.value if state.health else "unknown",
-        "last_frame_at": state.last_frame_at.isoformat() if state.last_frame_at else None,
-    }
+    return frame
 
 
 async def ws_enterprise_camera_stream(websocket: WebSocket, enterprise_id: str):

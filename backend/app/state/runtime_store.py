@@ -19,6 +19,7 @@ CAMERA_SOURCE_STATES: dict[str, "SourceState"] = {}
 
 
 def reset_runtime_state() -> None:
+    """Reset all runtime state to initial values."""
     REPORTING_WINDOWS.clear()
     REPORTING_WINDOWS.update(deepcopy(core.REPORTING_WINDOWS))
 
@@ -36,6 +37,28 @@ def reset_runtime_state() -> None:
     AUTHORITY_PACKAGES.clear()
     ENTERPRISE_ACTION_LOGS.clear()
     CAMERA_SOURCE_STATES.clear()
+
+
+def reset_telemetry_state() -> None:
+    """
+    Reset camera telemetry counters without affecting reference data.
+    Use this for clean baseline testing of real camera data.
+    """
+    for enterprise_id in CAMERA_RUNTIME:
+        CAMERA_RUNTIME[enterprise_id] = {
+            "frame": 0,
+            "events": [],
+            "latest_frame": None,
+        }
+
+    # Clear camera source states to force re-initialization
+    CAMERA_SOURCE_STATES.clear()
+
+    # Clear any cached broadcast tasks
+    for task in CAMERA_BROADCAST_TASKS.values():
+        if not task.done():
+            task.cancel()
+    CAMERA_BROADCAST_TASKS.clear()
 
 
 def get_camera_runtime():

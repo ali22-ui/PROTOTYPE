@@ -125,7 +125,10 @@ export interface CameraStream {
   active_tracks: number;
   status: string;
   camera_name: string;
-  sample_video_url?: string;
+  source_mode?: string | null;
+  is_live_camera?: boolean;
+  relay_url?: string | null;
+  source_status?: string;
   boxes: CameraStreamBox[];
   events: string[];
 }

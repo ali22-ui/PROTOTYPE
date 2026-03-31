@@ -12,3 +12,7 @@ class DomainForbiddenError(DomainError):
 
 class DomainConflictError(DomainError):
     """Raised when an operation conflicts with current domain state."""
+
+
+class DomainServiceUnavailableError(DomainError):
+    """Raised when a required service (e.g., database, external API) is unavailable."""

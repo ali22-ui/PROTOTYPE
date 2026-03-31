@@ -1,18 +1,41 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Archive, BellRing, Camera, ClipboardList, LayoutDashboard, LogOut, ScrollText, Settings } from 'lucide-react';
+import {
+  Archive,
+  BellRing,
+  Camera,
+  ClipboardList,
+  LayoutDashboard,
+  LogOut,
+  ScrollText,
+  Settings,
+} from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
 import { CameraProvider } from '@/features/enterprise/camera/context/CameraContext';
-import { getReportingControlState, subscribePortalBridge } from '@/lib/portalBridge';
-import { getComplianceStatusTheme, toReportingWindowStatus } from '@/lib/reportingStatus';
+import {
+  getReportingControlState,
+  subscribePortalBridge,
+} from '@/lib/portalBridge';
+import {
+  getComplianceStatusTheme,
+  toReportingWindowStatus,
+} from '@/lib/reportingStatus';
 import type { LguReportingControlStatus, User } from '@/types';
 
 const navItems: Array<{ to: string; label: string; icon: LucideIcon }> = [
   { to: '/enterprise/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/enterprise/camera-monitoring', label: 'Camera Monitoring', icon: Camera },
+  {
+    to: '/enterprise/camera-monitoring',
+    label: 'Camera Monitoring',
+    icon: Camera,
+  },
   { to: '/enterprise/camera-logs', label: 'Camera Logs', icon: ClipboardList },
   { to: '/enterprise/report-center', label: 'Report Center', icon: ScrollText },
-  { to: '/enterprise/archived-reports', label: 'Archived Reports', icon: Archive },
+  {
+    to: '/enterprise/archived-reports',
+    label: 'Archived Reports',
+    icon: Archive,
+  },
   { to: '/enterprise/account', label: 'Account', icon: Settings },
 ];
 
@@ -25,8 +48,13 @@ interface EnterpriseShellProps {
   onLogout: () => void;
 }
 
-export default function EnterpriseShell({ user, onLogout }: EnterpriseShellProps): JSX.Element {
-  const [reportingNotice, setReportingNotice] = useState(() => getReportingControlState());
+export default function EnterpriseShell({
+  user,
+  onLogout,
+}: EnterpriseShellProps): JSX.Element {
+  const [reportingNotice, setReportingNotice] = useState(() =>
+    getReportingControlState(),
+  );
 
   useEffect(() => {
     const previousTitle = document.title;
@@ -52,20 +80,27 @@ export default function EnterpriseShell({ user, onLogout }: EnterpriseShellProps
   }, [refreshReportingNotice]);
 
   const isNoticeVisible = Boolean(
-    reportingNotice
-    && (reportingNotice.scope === 'ALL' || reportingNotice.enterpriseId === user.enterpriseId),
+    reportingNotice &&
+    (reportingNotice.scope === 'ALL' ||
+      reportingNotice.enterpriseId === user.enterpriseId),
   );
-  const noticeStatus: LguReportingControlStatus = reportingNotice?.status
-    || (reportingNotice?.isOpen ? 'open' : 'closed');
+  const noticeStatus: LguReportingControlStatus =
+    reportingNotice?.status || (reportingNotice?.isOpen ? 'open' : 'closed');
   const noticeTheme = getComplianceStatusTheme(noticeStatus);
 
   return (
     <div className="flex h-screen overflow-hidden bg-brand-bg text-brand-dark">
-      <aside className="sticky top-0 flex h-screen w-[280px] flex-shrink-0 flex-col overflow-hidden border-r border-brand-mid/55 bg-gradient-to-b from-brand-dark via-brand-dark to-brand-accent text-brand-cream shadow-xl shadow-black/15">
+      <aside className="sticky top-0 flex h-screen w-70 shrink-0 flex-col overflow-hidden border-r border-brand-mid/55 bg-linear-to-b from-brand-dark via-brand-dark to-brand-accent text-brand-cream shadow-xl shadow-black/15">
         <div className="border-b border-brand-mid/50 p-5">
-          <p className="text-xs uppercase tracking-widest text-brand-cream/80">Enterprise Portal</p>
-          <h1 className="mt-1 text-xl font-bold leading-tight">{user.companyName}</h1>
-          <p className="mt-2 text-xs text-brand-cream/90">Permit: {user.businessPermit}</p>
+          <p className="text-xs uppercase tracking-widest text-brand-cream/80">
+            Enterprise Portal
+          </p>
+          <h1 className="mt-1 text-xl font-bold leading-tight">
+            {user.companyName}
+          </h1>
+          <p className="mt-2 text-xs text-brand-cream/90">
+            Permit: {user.businessPermit}
+          </p>
         </div>
 
         <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto p-4">
@@ -111,13 +146,15 @@ export default function EnterpriseShell({ user, onLogout }: EnterpriseShellProps
             >
               <BellRing size={16} className="mt-0.5" />
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide">LGU Reporting Notice</p>
+                <p className="text-xs font-semibold uppercase tracking-wide">
+                  LGU Reporting Notice
+                </p>
                 <p className="text-sm font-medium">
-                  {reportingNotice?.message
-                    || `${noticeTheme.title}.`}
+                  {reportingNotice?.message || `${noticeTheme.title}.`}
                 </p>
                 <p className={`text-xs ${noticeTheme.subtleTextClass}`}>
-                  Period: {reportingNotice?.period} • Status: {toReportingWindowStatus(noticeStatus)}
+                  Period: {reportingNotice?.period} • Status:{' '}
+                  {toReportingWindowStatus(noticeStatus)}
                 </p>
               </div>
             </section>

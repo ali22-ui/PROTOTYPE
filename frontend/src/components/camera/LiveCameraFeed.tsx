@@ -27,7 +27,7 @@ export default function LiveCameraFeed({
         </span>
       </header>
 
-      <div className="relative aspect-[16/9] w-full bg-slate-900">
+      <div className="relative aspect-video w-full bg-slate-900">
         <img
           src={streamUrl}
           alt="Live camera feed"
@@ -49,8 +49,9 @@ export default function LiveCameraFeed({
           />
         ) : null}
 
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/65 to-transparent p-3 text-xs text-white">
-          Stream wrapper is ready for MJPEG/WebRTC source integration from backend.
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-linear-to-t from-black/65 to-transparent p-3 text-xs text-white">
+          Stream wrapper is ready for MJPEG/WebRTC source integration from
+          backend.
         </div>
       </div>
     </section>
