@@ -1,4 +1,5 @@
 import axios, { AxiosError, AxiosHeaders } from 'axios';
+import { isFallbackEnabled, shouldUseBackend } from '@/lib/featureFlags';
 import type {
   ApiMutationResult,
   ArchivedReport,
@@ -216,6 +217,11 @@ const createDefaultAccountSettings = (
 const readCachedAccountSettings = (
   enterpriseId: string,
 ): EnterpriseAccountSettingsPayload | null => {
+  // Skip cache if fallbacks are disabled
+  if (!isFallbackEnabled()) {
+    return null;
+  }
+  
   try {
     const raw = localStorage.getItem(accountSettingsStorageKey(enterpriseId));
     if (!raw) {
@@ -237,6 +243,11 @@ const cacheAccountSettings = (
   enterpriseId: string,
   payload: EnterpriseAccountSettingsPayload,
 ): void => {
+  // Skip caching if fallbacks are disabled
+  if (!isFallbackEnabled()) {
+    return;
+  }
+  
   localStorage.setItem(accountSettingsStorageKey(enterpriseId), JSON.stringify(payload));
 };
 

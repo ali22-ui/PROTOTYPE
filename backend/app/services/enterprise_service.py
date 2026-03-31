@@ -1,6 +1,10 @@
+from datetime import datetime
+
 from domain_exceptions import DomainNotFoundError
 
+from app.core.supabase import is_supabase_available
 from app.repositories import enterprise_repository
+from app.repositories.supabase_repositories import reporting_window_repo
 
 
 def get_enterprise_profile(enterprise_id: str):
@@ -8,13 +12,21 @@ def get_enterprise_profile(enterprise_id: str):
     if not profile:
         raise DomainNotFoundError("Enterprise profile not found")
 
-    window = enterprise_repository.get_reporting_window(enterprise_id)
+    # Prefer Supabase for reporting window
+    if is_supabase_available():
+        window = reporting_window_repo.get_by_enterprise_current(enterprise_id)
+        if not window:
+            window = reporting_window_repo.get_by_enterprise(enterprise_id)
+    else:
+        window = enterprise_repository.get_reporting_window(enterprise_id)
+    
     if not window:
-        raise DomainNotFoundError("Enterprise reporting window not found")
+        # Default to closed if no window found
+        window = {"status": "CLOSED"}
 
     return {
         **profile,
-        "reporting_window_status": window["status"],
+        "reporting_window_status": window.get("status", "CLOSED"),
     }
 
 
@@ -48,6 +60,16 @@ def get_enterprise_dashboard(date: str | None = None, enterprise_id: str = "ent_
 
 
 def get_reporting_window_status(enterprise_id: str = "ent_archies_001"):
+    # Prefer Supabase for reporting window
+    if is_supabase_available():
+        current_period = datetime.now().strftime("%Y-%m")
+        window = reporting_window_repo.get_by_enterprise(enterprise_id, current_period)
+        if not window:
+            window = reporting_window_repo.get_by_enterprise(enterprise_id)
+        if window:
+            return window
+    
+    # Fallback to in-memory
     window = enterprise_repository.get_reporting_window(enterprise_id)
     if not window:
         raise DomainNotFoundError("Enterprise reporting window not found")
