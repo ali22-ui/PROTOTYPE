@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "sync:camera-assets": "node scripts/sync-camera-assets.mjs",
+    "sync:camera-assets": "node ../scripts/frontend/sync-camera-assets.mjs",
     "predev": "npm run sync:camera-assets",
     "dev": "vite",
     "prebuild": "npm run sync:camera-assets",

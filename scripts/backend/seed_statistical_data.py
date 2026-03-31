@@ -9,14 +9,14 @@ This script seeds ONLY statistical/aggregate tables - it does NOT:
 - Simulate real-time camera behavior
 
 Usage:
-    python seed_statistical_data.py --help
-    python seed_statistical_data.py --enterprise-id ENT001 --start-date 2026-03-01 --end-date 2026-03-31
-    python seed_statistical_data.py --all-enterprises --dry-run
-    python seed_statistical_data.py --clear --enterprise-id ENT001
+    python scripts/backend/seed_statistical_data.py --help
+    python scripts/backend/seed_statistical_data.py --enterprise-id ENT001 --start-date 2026-03-01 --end-date 2026-03-31
+    python scripts/backend/seed_statistical_data.py --all-enterprises --dry-run
+    python scripts/backend/seed_statistical_data.py --clear --enterprise-id ENT001
 
 Environment:
-    Requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env
-    Run from backend directory: python seed_statistical_data.py
+    Requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in backend/.env
+    Run from repository root: python scripts/backend/seed_statistical_data.py
 
 Options:
     --enterprise-id     Target enterprise ID (can specify multiple)
@@ -35,13 +35,18 @@ Source Tag:
 
 import argparse
 import hashlib
-import os
 import sys
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional
 
-# Ensure we can import from app
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from dotenv import load_dotenv
+
+BACKEND_DIR = Path(__file__).resolve().parents[2] / "backend"
+
+# Ensure we can import backend app modules and environment values.
+sys.path.insert(0, str(BACKEND_DIR))
+load_dotenv(BACKEND_DIR / ".env")
 
 from app.core.supabase import get_supabase_client, is_supabase_available
 

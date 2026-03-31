@@ -7,14 +7,15 @@ import https from 'node:https';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const projectRoot = resolve(__dirname, '..');
+const workspaceRoot = resolve(__dirname, '..', '..');
+const frontendRoot = resolve(workspaceRoot, 'frontend');
 
-const faceApiSource = resolve(projectRoot, 'node_modules', '@vladmandic', 'face-api', 'model');
-const faceApiTarget = resolve(projectRoot, 'public', 'vendor', 'face-api', 'model');
+const faceApiSource = resolve(frontendRoot, 'node_modules', '@vladmandic', 'face-api', 'model');
+const faceApiTarget = resolve(frontendRoot, 'public', 'vendor', 'face-api', 'model');
 
-const mediaPipeWasmSource = resolve(projectRoot, 'node_modules', '@mediapipe', 'tasks-vision', 'wasm');
-const mediaPipeWasmTarget = resolve(projectRoot, 'public', 'vendor', 'mediapipe', 'wasm');
-const mediaPipeModelTarget = resolve(projectRoot, 'public', 'vendor', 'mediapipe', 'models', 'efficientdet_lite0.tflite');
+const mediaPipeWasmSource = resolve(frontendRoot, 'node_modules', '@mediapipe', 'tasks-vision', 'wasm');
+const mediaPipeWasmTarget = resolve(frontendRoot, 'public', 'vendor', 'mediapipe', 'wasm');
+const mediaPipeModelTarget = resolve(frontendRoot, 'public', 'vendor', 'mediapipe', 'models', 'efficientdet_lite0.tflite');
 const mediaPipeModelUrl =
   'https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite';
 
