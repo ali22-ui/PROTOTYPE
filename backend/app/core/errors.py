@@ -6,6 +6,7 @@ from domain_exceptions import (
     DomainConflictError,
     DomainForbiddenError,
     DomainNotFoundError,
+    DomainServiceUnavailableError,
 )
 
 
@@ -39,6 +40,11 @@ def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(DomainConflictError)
     async def domain_conflict_handler(request: Request, exc: DomainConflictError) -> JSONResponse:
         response = JSONResponse(status_code=409, content={"detail": str(exc)})
+        return _add_cors_headers(response, request)
+
+    @app.exception_handler(DomainServiceUnavailableError)
+    async def domain_service_unavailable_handler(request: Request, exc: DomainServiceUnavailableError) -> JSONResponse:
+        response = JSONResponse(status_code=503, content={"detail": str(exc), "service_unavailable": True})
         return _add_cors_headers(response, request)
 
     @app.exception_handler(Exception)

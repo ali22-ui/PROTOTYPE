@@ -19,18 +19,17 @@ from app.schemas.detection import (
     UnifiedDetectionEvent,
     VisitorStatistics,
 )
+from domain_exceptions import DomainServiceUnavailableError
 
 
 def insert_detection_events(batch: DetectionBatchRequest) -> DetectionBatchResponse:
     """
     Insert a batch of detection events into the database.
-    Falls back to in-memory storage if Supabase is not configured.
+    Returns explicit service unavailable error if Supabase is not configured.
     """
     if not is_supabase_available():
-        # In-memory fallback for development
-        return DetectionBatchResponse(
-            inserted_count=len(batch.events),
-            message="Stored in memory (Supabase not configured)",
+        raise DomainServiceUnavailableError(
+            "Database service unavailable. Detection events cannot be persisted."
         )
 
     client = get_supabase_client()
@@ -78,11 +77,11 @@ def insert_unified_detection_events(
     """
     Insert a batch of unified (deduplicated) person events.
     Updates existing person records or inserts new ones.
+    Returns explicit service unavailable error if Supabase is not configured.
     """
     if not is_supabase_available():
-        return UnifiedDetectionBatchResponse(
-            inserted_count=len(batch.events),
-            message="Stored in memory (Supabase not configured)",
+        raise DomainServiceUnavailableError(
+            "Database service unavailable. Unified detection events cannot be persisted."
         )
 
     client = get_supabase_client()
@@ -263,11 +262,12 @@ def get_visitor_statistics(
 ) -> list[VisitorStatistics]:
     """
     Get visitor statistics for an enterprise.
-    Falls back to mock data if Supabase is not configured.
+    Returns explicit empty list when Supabase is not configured - no mock data fallback.
     """
     if not is_supabase_available():
-        # Return mock statistics for development
-        return _generate_mock_statistics(enterprise_id, date)
+        # Return empty list with service unavailable indication
+        # Statistical test data should be seeded via seed_statistical_mock_data.py script
+        return []
 
     client = get_supabase_client()
     query = client.table("visitor_statistics").select("*").eq("enterprise_id", enterprise_id)
@@ -301,17 +301,11 @@ def get_deduplication_stats(
 ) -> DeduplicationStats:
     """
     Get deduplication statistics for an enterprise.
+    Returns empty stats when Supabase is unavailable - no mock data fallback.
     """
     if not is_supabase_available():
-        return DeduplicationStats(
-            total_tracks=100,
-            unique_persons=65,
-            reid_success_count=35,
-            reid_by_geometric=15,
-            reid_by_appearance=12,
-            reid_by_face=8,
-            dedup_ratio=0.35,
-        )
+        # Return empty stats - statistical test data should be seeded via script
+        return DeduplicationStats()
 
     client = get_supabase_client()
     target_date = date or datetime.now().strftime("%Y-%m-%d")
@@ -504,41 +498,3 @@ def cleanup_old_detections() -> int:
     except Exception as e:
         print(f"Error cleaning up old detections: {e}")
         return 0
-
-
-def _generate_mock_statistics(enterprise_id: str, date: Optional[str] = None) -> list[VisitorStatistics]:
-    """Generate mock statistics for development."""
-    import random
-
-    target_date = date or datetime.now().strftime("%Y-%m-%d")
-    stats = []
-
-    for hour in range(8, 22):  # 8 AM to 10 PM
-        male = random.randint(5, 30)
-        female = random.randint(5, 30)
-        total_tracks = male + female + random.randint(10, 30)
-        unique = male + female
-        
-        stats.append(
-            VisitorStatistics(
-                enterprise_id=enterprise_id,
-                date=target_date,
-                hour=hour,
-                male_total=male,
-                female_total=female,
-                unknown_total=random.randint(0, 5),
-                unique_visitors=unique,
-                avg_dwell_seconds=random.randint(60, 600),
-                dedup_stats=DeduplicationStats(
-                    total_tracks=total_tracks,
-                    unique_persons=unique,
-                    reid_success_count=total_tracks - unique,
-                    reid_by_geometric=random.randint(5, 15),
-                    reid_by_appearance=random.randint(3, 10),
-                    reid_by_face=random.randint(1, 5),
-                    dedup_ratio=1 - (unique / total_tracks) if total_tracks > 0 else 0,
-                ),
-            )
-        )
-
-    return stats

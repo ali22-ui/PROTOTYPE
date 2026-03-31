@@ -1,4 +1,6 @@
-export type CameraMode = 'live' | 'ip_webcam' | 'demo';
+export type CameraMode = 'live_webcam' | 'ip_webcam';
+
+export type CameraConnectionState = 'connecting' | 'live' | 'source_unavailable' | 'backend_unavailable';
 
 export type GenderValue = 'male' | 'female' | 'unknown';
 
@@ -67,11 +69,17 @@ export interface CameraSourceConfig {
 
 export interface CameraSourceState {
   enterprise_id: string;
-  source_mode: CameraMode | string;
+  source_mode: CameraMode | null;
   is_live_camera: boolean;
   relay_url: string | null;
   health: CameraSourceHealth;
   config: CameraSourceConfig;
+}
+
+export interface CameraDiagnostic {
+  message: string;
+  available_modes?: CameraMode[];
+  last_ok_at?: string | null;
 }
 
 export interface CameraStreamBox {
@@ -90,12 +98,12 @@ export interface CameraStreamFrame {
   active_tracks: number;
   status: string;
   camera_name: string;
-  source_mode: string;
+  source_mode: CameraMode | null;
   is_live_camera: boolean;
   relay_url: string | null;
   source_status: string;
   last_frame_at: string | null;
-  sample_video_url?: string;
+  diagnostic?: CameraDiagnostic;
   boxes: CameraStreamBox[];
   events: string[];
 }

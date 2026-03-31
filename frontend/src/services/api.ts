@@ -280,64 +280,6 @@ const resolvePeakDate = (rows: DetailedDetectionRow[]): string => {
   return peakDate;
 };
 
-const createFallbackDashboard = (enterpriseId: string): EnterpriseDashboardResponse => {
-  const rows: DetailedDetectionRow[] = [];
-  const month = new Date().toISOString().slice(0, 7);
-  for (let day = 1; day <= 30; day += 1) {
-    rows.push({
-      date: `${month}-${String(day).padStart(2, '0')}`,
-      time_slot: `${8 + (day % 12)}:00 AM`,
-      male_total: 16 + (day % 10),
-      female_total: 14 + ((day * 2) % 9),
-    });
-  }
-
-  return {
-    enterprise_id: enterpriseId,
-    date: `${month}-01`,
-    timezone: 'PST',
-    header: {
-      company_name: 'Enterprise Tourism Dashboard',
-      datetime_label: new Date().toLocaleString(),
-    },
-    key_stats: {
-      total_visitors_mtd: rows.reduce((sum, row) => sum + row.male_total + row.female_total, 0),
-      total_visitors_mtd_trend_pct: 11.2,
-      peak_visitor_hours: ['12:00 PM - 2:00 PM'],
-      clustered_chart_mode: '1h window',
-      average_dwell_time: '1h 45m',
-    },
-    clustered_column_chart: [
-      {
-        time_slot: '12:00 PM',
-        male_total: 42,
-        female_total: 38,
-        male: {
-          tourist: 12,
-          local_resident: 20,
-          non_local_resident: 10,
-        },
-        female: {
-          tourist: 10,
-          local_resident: 18,
-          non_local_resident: 10,
-        },
-      },
-    ],
-    detailed_detection_rows: rows,
-    visitor_residence_breakdown: {
-      Foreigner: 22,
-      'Non-Local Resident': 33,
-      'Local Resident': 45,
-    },
-    peak_visit_frequency_by_residence: [
-      { category: 'Local', value: 320 },
-      { category: 'Non-Local', value: 240 },
-      { category: 'Foreigner', value: 120 },
-    ],
-  };
-};
-
 const deriveTouristCount = (dashboard: EnterpriseDashboardResponse): number => {
   const fromBreakdown = dashboard.clustered_column_chart.reduce((sum, point) => {
     const maleTourist = point.male?.tourist ?? 0;
@@ -459,14 +401,10 @@ export const login = async (credentials: LoginRequest): Promise<User> => {
 };
 
 export const fetchEnterpriseDashboard = async (enterpriseId: string): Promise<EnterpriseDashboardResponse> => {
-  try {
-    const response = await http.get<EnterpriseDashboardResponse>('/enterprise/dashboard', {
-      params: { enterprise_id: enterpriseId },
-    });
-    return response.data;
-  } catch {
-    return createFallbackDashboard(enterpriseId);
-  }
+  const response = await http.get<EnterpriseDashboardResponse>('/enterprise/dashboard', {
+    params: { enterprise_id: enterpriseId },
+  });
+  return response.data;
 };
 
 export const adaptVisitorStats = (dashboard: EnterpriseDashboardResponse): VisitorStats => {
@@ -505,24 +443,10 @@ export const fetchVisitorStats = async (enterpriseId: string): Promise<VisitorSt
 };
 
 export const fetchCameraStream = async (enterpriseId: string): Promise<CameraStream> => {
-  try {
-    const response = await http.get<CameraStream>('/enterprise/camera/stream', {
-      params: { enterprise_id: enterpriseId },
-    });
-    return response.data;
-  } catch {
-    return {
-      enterprise_id: enterpriseId,
-      frame: 0,
-      fps: 0,
-      active_tracks: 0,
-      status: 'OFFLINE',
-      camera_name: 'Main Entrance - Camera 1',
-      sample_video_url: 'https://samplelib.com/lib/preview/mp4/sample-5s.mp4',
-      boxes: [],
-      events: ['Camera service unavailable. Showing fallback stream panel.'],
-    };
-  }
+  const response = await http.get<CameraStream>('/enterprise/camera/stream', {
+    params: { enterprise_id: enterpriseId },
+  });
+  return response.data;
 };
 
 export const fetchCameraLogs = async (enterpriseId: string, month?: string): Promise<CameraLog[]> => {

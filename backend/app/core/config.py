@@ -7,7 +7,7 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-CameraSourceMode = Literal["mock", "live_webcam", "ip_webcam"]
+CameraSourceMode = Literal["live_webcam", "ip_webcam"]
 
 
 class Settings(BaseSettings):
@@ -27,8 +27,8 @@ class Settings(BaseSettings):
     # Data Retention Settings
     detection_retention_days: int = 30
 
-    # IP Webcam Configuration
-    camera_source_mode: CameraSourceMode = "mock"
+    # IP Webcam Configuration - requires explicit user selection, no default auto-start
+    camera_source_mode: CameraSourceMode | None = None
     ip_webcam_enabled: bool = True
     ip_webcam_base_url: str = "http://192.168.1.4:8080"
     ip_webcam_video_path: str = "/video"

@@ -38,7 +38,7 @@ class IPCameraHealth:
 @dataclass
 class SourceState:
     """Runtime state for a camera source."""
-    mode: CameraSourceMode = "mock"
+    mode: CameraSourceMode | None = None  # None = no source selected, requires explicit user selection
     health: IPCameraHealth = field(default_factory=IPCameraHealth)
     relay_url: str | None = None
     last_frame_at: datetime | None = None
