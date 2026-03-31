@@ -10,10 +10,10 @@ import type { CameraMode } from '../types';
 
 const CAMERA_MODE_KEY = 'lgu-dashboard-camera-mode';
 
-const CameraModeValue: Record<string, CameraMode> = {
-  LIVE: 'live',
+const CameraModeValue = {
+  LIVE: 'live_webcam',
   IP_WEBCAM: 'ip_webcam',
-};
+} as const satisfies Record<string, CameraMode>;
 
 interface CameraPageProps {
   compactLayout?: boolean;
@@ -24,6 +24,7 @@ export default function CameraPage({
 }: CameraPageProps): JSX.Element {
   const [mode, setMode] = useState<CameraMode>(() => {
     const saved = localStorage.getItem(CAMERA_MODE_KEY);
+    if (saved === 'live') return CameraModeValue.LIVE;
     if (saved === CameraModeValue.LIVE) return CameraModeValue.LIVE;
     if (saved === CameraModeValue.IP_WEBCAM) return CameraModeValue.IP_WEBCAM;
     return CameraModeValue.LIVE;
