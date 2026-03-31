@@ -178,5 +178,3 @@ export const isPortalBridgeEnabled = (): boolean => {
   return currentFlags.enablePortalBridgeSync;
 };
 
-// Export type for external use
-export type { FeatureFlags };

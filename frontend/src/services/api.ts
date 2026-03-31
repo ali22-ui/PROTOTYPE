@@ -1,5 +1,4 @@
 import axios, { AxiosError, AxiosHeaders } from 'axios';
-import { isFallbackEnabled, shouldUseBackend } from '@/lib/featureFlags';
 import type {
   ApiMutationResult,
   ArchivedReport,
@@ -26,7 +25,6 @@ import type {
   User,
   VisitorStats,
 } from '@/types';
-import { buildSubmissionRecordFromLogs, upsertSubmissionRecord } from '@/lib/portalBridge';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
 export const ENTERPRISE_SESSION_TOKEN_KEY = 'enterprise-session-token';
@@ -34,7 +32,6 @@ export const LGU_SESSION_TOKEN_KEY = 'lgu-session-token';
 const SESSION_USER_KEY = 'enterprise-session-user';
 const LEGACY_ENTERPRISE_ID_KEY = 'enterprise-account-id';
 const LEGACY_ENTERPRISE_NAME_KEY = 'enterprise-account-name';
-const ACCOUNT_SETTINGS_STORAGE_PREFIX = 'enterprise-account-settings-v1';
 
 const WEEKDAY_LABELS: DashboardWeeklyAreaPoint['day'][] = [
   'Sun',
@@ -131,9 +128,6 @@ const normalize = (value: string): string => value.trim().toLowerCase().replace(
 
 const getCurrentMonth = (): string => new Date().toISOString().slice(0, 7);
 
-const accountSettingsStorageKey = (enterpriseId: string): string =>
-  `${ACCOUNT_SETTINGS_STORAGE_PREFIX}:${enterpriseId}`;
-
 const toAppError = (error: unknown, fallback = 'Something went wrong.'): Error => {
   if (error instanceof Error) {
     return error;
@@ -212,43 +206,6 @@ const createDefaultAccountSettings = (
       themePreference: 'system',
     },
   };
-};
-
-const readCachedAccountSettings = (
-  enterpriseId: string,
-): EnterpriseAccountSettingsPayload | null => {
-  // Skip cache if fallbacks are disabled
-  if (!isFallbackEnabled()) {
-    return null;
-  }
-  
-  try {
-    const raw = localStorage.getItem(accountSettingsStorageKey(enterpriseId));
-    if (!raw) {
-      return null;
-    }
-
-    const parsed = JSON.parse(raw) as EnterpriseAccountSettingsPayload;
-    if (!parsed?.profile || !parsed?.preferences) {
-      return null;
-    }
-
-    return parsed;
-  } catch {
-    return null;
-  }
-};
-
-const cacheAccountSettings = (
-  enterpriseId: string,
-  payload: EnterpriseAccountSettingsPayload,
-): void => {
-  // Skip caching if fallbacks are disabled
-  if (!isFallbackEnabled()) {
-    return;
-  }
-  
-  localStorage.setItem(accountSettingsStorageKey(enterpriseId), JSON.stringify(payload));
 };
 
 const parseTimeSlotToDate = (date: string, timeSlot: string): Date => {
@@ -498,41 +455,9 @@ export const submitMonthlyReport = async (
       message: response.data.message,
     };
 
-    const enterpriseName = localStorage.getItem(LEGACY_ENTERPRISE_NAME_KEY) || 'Enterprise Account';
-    upsertSubmissionRecord(
-      buildSubmissionRecordFromLogs({
-        reportId: result.reportId,
-        enterpriseId,
-        enterpriseName,
-        month,
-        status: result.status,
-        logs,
-      }),
-    );
-
     return result;
   } catch (error) {
-    const fallbackReportId = `rpt_${enterpriseId}_${month.replace('-', '_')}_${Date.now()}`;
-    const enterpriseName = localStorage.getItem(LEGACY_ENTERPRISE_NAME_KEY) || 'Enterprise Account';
-
-    upsertSubmissionRecord(
-      buildSubmissionRecordFromLogs({
-        reportId: fallbackReportId,
-        enterpriseId,
-        enterpriseName,
-        month,
-        status: 'SUBMITTED',
-        logs,
-      }),
-    );
-
-    toAppError(error, 'Backend unavailable. Submission was stored locally for LGU portal sync.');
-
-    return {
-      reportId: fallbackReportId,
-      status: 'SUBMITTED',
-      message: 'Backend unavailable. Report was saved locally and synced to LGU portal.',
-    };
+    throw toAppError(error, 'Unable to submit report. Please retry.');
   }
 };
 
@@ -549,8 +474,8 @@ export const fetchArchivedReports = async (enterpriseId: string): Promise<Archiv
       status: report.audit?.reporting_window_status_at_submit || 'Submitted',
       submittedBy: report.submitted_by_user_id || 'Enterprise User',
     }));
-  } catch {
-    return [];
+  } catch (error) {
+    throw toAppError(error, 'Unable to load archived reports.');
   }
 };
 
@@ -806,8 +731,7 @@ export const fetchEnterpriseAccountSettings = async (
   enterpriseId: string,
   businessPermit: string,
 ): Promise<EnterpriseAccountSettingsPayload> => {
-  const fallback = readCachedAccountSettings(enterpriseId)
-    ?? createDefaultAccountSettings(enterpriseId, businessPermit);
+  const fallback = createDefaultAccountSettings(enterpriseId, businessPermit);
 
   try {
     const response = await http.get<{
@@ -831,12 +755,9 @@ export const fetchEnterpriseAccountSettings = async (
         themePreference: response.data.preferences?.themePreference || fallback.preferences.themePreference,
       },
     };
-
-    cacheAccountSettings(enterpriseId, payload);
     return payload;
-  } catch {
-    cacheAccountSettings(enterpriseId, fallback);
-    return fallback;
+  } catch (error) {
+    throw toAppError(error, 'Unable to load account settings.');
   }
 };
 
@@ -849,20 +770,16 @@ export const saveEnterpriseAccountProfile = async (
       enterprise_id: enterpriseId,
       profile,
     });
-  } catch {
-    // Fallback to frontend-local persistence.
+    return {
+      success: true,
+      message: 'Profile settings saved successfully.',
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: toAppError(error, 'Unable to save profile settings.').message,
+    };
   }
-
-  const existing = readCachedAccountSettings(enterpriseId) ?? createDefaultAccountSettings(enterpriseId, profile.businessPermit);
-  cacheAccountSettings(enterpriseId, {
-    ...existing,
-    profile,
-  });
-
-  return {
-    success: true,
-    message: 'Profile settings saved successfully.',
-  };
 };
 
 export const updateEnterpriseAccountPassword = async (
@@ -894,17 +811,17 @@ export const updateEnterpriseAccountPassword = async (
       success: true,
       message: 'Password updated successfully.',
     };
-  } catch {
+  } catch (error) {
     return {
-      success: true,
-      message: 'Password updated locally. Sync will occur when backend endpoint is available.',
+      success: false,
+      message: toAppError(error, 'Unable to update password.').message,
     };
   }
 };
 
 export const saveEnterpriseSystemPreferences = async (
   enterpriseId: string,
-  businessPermit: string,
+  _businessPermit: string,
   preferences: EnterpriseSystemPreferences,
 ): Promise<ApiMutationResult> => {
   try {
@@ -912,20 +829,16 @@ export const saveEnterpriseSystemPreferences = async (
       enterprise_id: enterpriseId,
       preferences,
     });
-  } catch {
-    // Fallback to frontend-local persistence.
+    return {
+      success: true,
+      message: 'System preferences saved successfully.',
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: toAppError(error, 'Unable to save system preferences.').message,
+    };
   }
-
-  const existing = readCachedAccountSettings(enterpriseId) ?? createDefaultAccountSettings(enterpriseId, businessPermit);
-  cacheAccountSettings(enterpriseId, {
-    ...existing,
-    preferences,
-  });
-
-  return {
-    success: true,
-    message: 'System preferences saved successfully.',
-  };
 };
 
 export default http;

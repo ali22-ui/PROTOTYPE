@@ -195,9 +195,6 @@ const normalizeReportingControlState = (value: unknown): LguReportingControlStat
 const canUseStorage = (): boolean =>
   typeof window !== 'undefined' && typeof window.localStorage !== 'undefined' && isPortalBridgeEnabled();
 
-const canUseStorageRaw = (): boolean =>
-  typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
-
 const encodeBase64 = (value: string): string => {
   const bytes = new TextEncoder().encode(value);
   let binary = '';

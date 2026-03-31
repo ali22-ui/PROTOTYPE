@@ -1,6 +1,11 @@
 from datetime import datetime
 
-from domain_exceptions import DomainConflictError, DomainForbiddenError, DomainNotFoundError
+from domain_exceptions import (
+    DomainConflictError,
+    DomainForbiddenError,
+    DomainNotFoundError,
+    DomainServiceUnavailableError,
+)
 
 from app.core.supabase import is_supabase_available
 from app.repositories import enterprise_repository, reporting_repository
@@ -15,19 +20,27 @@ from app.schemas.enterprise import EnterpriseActionRequest, EnterpriseReportSubm
 from app.schemas.lgu import ReportingWindowAction, ReportingWindowBulkAction
 
 
+def _require_supabase() -> None:
+    if not is_supabase_available():
+        raise DomainServiceUnavailableError("Supabase is required for reporting workflows")
+
+
+def _resolve_reporting_window(enterprise_id: str, period: str | None = None) -> dict | None:
+    if period:
+        window = reporting_window_repo.get_by_enterprise(enterprise_id, period)
+        if window:
+            return window
+    return reporting_window_repo.get_by_enterprise_current(enterprise_id) or reporting_window_repo.get_by_enterprise(enterprise_id)
+
+
 def submit_enterprise_report(body: EnterpriseReportSubmission):
+    _require_supabase()
+
     enterprise = enterprise_repository.get_enterprise_account(body.enterprise_id)
     if not enterprise:
         raise DomainNotFoundError("Enterprise account not found")
 
-    # Check reporting window - prefer Supabase, fallback to runtime
-    if is_supabase_available():
-        window = reporting_window_repo.get_by_enterprise(body.enterprise_id, body.period)
-        if not window:
-            window = reporting_window_repo.get_by_enterprise_current(body.enterprise_id)
-    else:
-        window = enterprise_repository.get_reporting_window(body.enterprise_id)
-    
+    window = _resolve_reporting_window(body.enterprise_id, body.period)
     if not window:
         raise DomainNotFoundError("Enterprise reporting window not found")
 
@@ -48,34 +61,24 @@ def submit_enterprise_report(body: EnterpriseReportSubmission):
         report_pack["linked_lgu_id"] = enterprise["linked_lgu_id"]
         report_pack["report_id"] = f"rpt_{body.enterprise_id}_{body.period.replace('-', '_')}"
 
-    # Persist to Supabase if available
-    if is_supabase_available():
-        # Create or update report submission
-        report_submission_repo.upsert(
-            enterprise_id=body.enterprise_id,
-            period=body.period,
-            enterprise_name=enterprise["company_name"],
-            linked_lgu_id=enterprise.get("linked_lgu_id"),
-            status="SUBMITTED",
-            payload=report_pack,
-            submitted_by=body.enterprise_id,
-        )
-        # Mark reporting window as submitted
-        reporting_window_repo.mark_submitted(body.enterprise_id, body.period)
-        # Audit log
-        audit_log_repo.log(
-            entity_type="report",
-            entity_id=report_pack["report_id"],
-            action="submit",
-            actor_id=body.enterprise_id,
-            actor_type="enterprise",
-            new_value={"period": body.period, "status": "SUBMITTED"},
-        )
-    else:
-        # Fallback to in-memory (legacy)
-        if not any(pack["report_id"] == report_pack["report_id"] for pack in reporting_repository.list_report_packs()):
-            reporting_repository.add_report_pack(report_pack)
-        window["status"] = "SUBMITTED"
+    report_submission_repo.upsert(
+        enterprise_id=body.enterprise_id,
+        period=body.period,
+        enterprise_name=enterprise["company_name"],
+        linked_lgu_id=enterprise.get("linked_lgu_id"),
+        status="SUBMITTED",
+        payload=report_pack,
+        submitted_by=body.enterprise_id,
+    )
+    reporting_window_repo.mark_submitted(body.enterprise_id, body.period)
+    audit_log_repo.log(
+        entity_type="report",
+        entity_id=report_pack["report_id"],
+        action="submit",
+        actor_id=body.enterprise_id,
+        actor_type="enterprise",
+        new_value={"period": body.period, "status": "SUBMITTED"},
+    )
 
     return {
         "message": "Report submitted successfully to linked LGU account",
@@ -85,18 +88,14 @@ def submit_enterprise_report(body: EnterpriseReportSubmission):
 
 
 def get_enterprise_report_history(enterprise_id: str):
+    _require_supabase()
+
     enterprise = enterprise_repository.get_enterprise_account(enterprise_id)
     if not enterprise:
         raise DomainNotFoundError("Enterprise account not found")
 
     target_id = enterprise_repository.resolve_enterprise_id(enterprise_id)
-    
-    # Prefer Supabase for report history
-    if is_supabase_available():
-        reports = report_submission_repo.list_by_enterprise(target_id)
-    else:
-        reports = [item for item in reporting_repository.list_report_packs() if item.get("enterprise_id") == target_id]
-        reports = sorted(reports, key=lambda item: item.get("submitted_at", ""), reverse=True)
+    reports = report_submission_repo.list_by_enterprise(target_id)
     
     return {
         "enterprise_id": target_id,
@@ -105,28 +104,18 @@ def get_enterprise_report_history(enterprise_id: str):
 
 
 def enterprise_request_maintenance(body: EnterpriseActionRequest):
+    _require_supabase()
+
     enterprise = enterprise_repository.get_enterprise_account(body.enterprise_id)
     if not enterprise:
         raise DomainNotFoundError("Enterprise account not found")
 
     message = body.message or "General CCTV / AI service check requested."
-    
-    # Persist to Supabase if available
-    if is_supabase_available():
-        ticket = enterprise_action_repo.create(
-            enterprise_id=body.enterprise_id,
-            ticket_type="maintenance",
-            message=message,
-        )
-    else:
-        ticket = {
-            "ticket_id": f"mnt_{datetime.now().strftime('%Y%m%d%H%M%S')}",
-            "enterprise_id": body.enterprise_id,
-            "type": "maintenance",
-            "message": message,
-            "created_at": datetime.now().strftime("%Y-%m-%d %I:%M %p PST"),
-        }
-        reporting_repository.list_action_logs().append(ticket)
+    ticket = enterprise_action_repo.create(
+        enterprise_id=body.enterprise_id,
+        ticket_type="maintenance",
+        message=message,
+    )
     
     return {
         "message": "Maintenance request submitted.",
@@ -135,28 +124,18 @@ def enterprise_request_maintenance(body: EnterpriseActionRequest):
 
 
 def enterprise_manual_log_correction(body: EnterpriseActionRequest):
+    _require_supabase()
+
     enterprise = enterprise_repository.get_enterprise_account(body.enterprise_id)
     if not enterprise:
         raise DomainNotFoundError("Enterprise account not found")
 
     message = body.message or "Manual detection log correction requested."
-    
-    # Persist to Supabase if available
-    if is_supabase_available():
-        ticket = enterprise_action_repo.create(
-            enterprise_id=body.enterprise_id,
-            ticket_type="manual-log-correction",
-            message=message,
-        )
-    else:
-        ticket = {
-            "ticket_id": f"mlc_{datetime.now().strftime('%Y%m%d%H%M%S')}",
-            "enterprise_id": body.enterprise_id,
-            "type": "manual-log-correction",
-            "message": message,
-            "created_at": datetime.now().strftime("%Y-%m-%d %I:%M %p PST"),
-        }
-        reporting_repository.list_action_logs().append(ticket)
+    ticket = enterprise_action_repo.create(
+        enterprise_id=body.enterprise_id,
+        ticket_type="manual-log-correction",
+        message=message,
+    )
     
     return {
         "message": "Manual log correction request submitted.",
@@ -165,26 +144,25 @@ def enterprise_manual_log_correction(body: EnterpriseActionRequest):
 
 
 def get_lgu_overview():
+    _require_supabase()
+
     total_enterprises = len(enterprise_repository.list_enterprise_accounts())
-    
-    if is_supabase_available():
-        # Get current period windows from Supabase
-        current_period = datetime.now().strftime("%Y-%m")
-        windows = reporting_window_repo.list_by_period(current_period)
-        submitted = sum(1 for w in windows if w.get("status") == "SUBMITTED")
-        active = reporting_window_repo.get_by_enterprise_current(
-            enterprise_repository.get_archies_profile()["enterprise_id"]
-        )
-    else:
-        reporting_windows = {
-            item["enterprise_id"]: enterprise_repository.get_reporting_window(item["enterprise_id"])
-            for item in enterprise_repository.list_enterprise_accounts()
-        }
-        submitted = sum(1 for item in reporting_windows.values() if item and item["status"] == "SUBMITTED")
-        active = enterprise_repository.get_reporting_window(enterprise_repository.get_archies_profile()["enterprise_id"])
-    
+
+    current_period = datetime.now().strftime("%Y-%m")
+    windows = reporting_window_repo.list_by_period(current_period)
+    submitted = sum(1 for w in windows if w.get("status") == "SUBMITTED")
+    active = reporting_window_repo.get_by_enterprise_current(
+        enterprise_repository.get_archies_profile()["enterprise_id"]
+    )
+
     if not active:
-        raise DomainNotFoundError("Enterprise reporting window not found")
+        active = {
+            "enterprise_id": enterprise_repository.get_archies_profile()["enterprise_id"],
+            "period": current_period,
+            "status": "CLOSED",
+            "opened_at": None,
+            "opened_by": None,
+        }
 
     return {
         "lgu_id": "lgu_san_pedro_001",
@@ -197,47 +175,32 @@ def get_lgu_overview():
 
 
 def get_lgu_reports(period: str | None = None, enterprise_id: str | None = None):
-    if is_supabase_available():
-        if enterprise_id:
-            target_id = enterprise_repository.resolve_enterprise_id(enterprise_id)
-            reports = report_submission_repo.list_by_period(period, target_id) if period else report_submission_repo.list_by_enterprise(target_id)
-        elif period:
-            reports = report_submission_repo.list_by_period(period)
-        else:
-            reports = report_submission_repo.list_all()
-        return {"reports": reports}
+    _require_supabase()
+
+    if enterprise_id:
+        target_id = enterprise_repository.resolve_enterprise_id(enterprise_id)
+        reports = report_submission_repo.list_by_period(period, target_id) if period else report_submission_repo.list_by_enterprise(target_id)
+    elif period:
+        reports = report_submission_repo.list_by_period(period)
     else:
-        packs = reporting_repository.list_report_packs()
-        if period:
-            packs = [item for item in packs if item.get("period", {}).get("month") == period]
-        if enterprise_id:
-            target_id = enterprise_repository.resolve_enterprise_id(enterprise_id)
-            packs = [item for item in packs if item.get("enterprise_id") == target_id]
-        return {"reports": packs}
+        reports = report_submission_repo.list_all()
+
+    return {"reports": reports}
 
 
 def get_lgu_report_detail(report_id: str):
-    if is_supabase_available():
-        report = report_submission_repo.get_by_id(report_id)
-        if report:
-            return report
-    # Fallback to in-memory
-    report = reporting_repository.get_report_by_id(report_id)
+    _require_supabase()
+
+    report = report_submission_repo.get_by_id(report_id)
     if not report:
         raise DomainNotFoundError("Report not found")
     return report
 
 
 def generate_authority_package(report_id: str):
-    # Try Supabase first, then in-memory
-    if is_supabase_available():
-        report = report_submission_repo.get_by_id(report_id)
-    else:
-        report = None
-    
-    if not report:
-        report = reporting_repository.get_report_by_id(report_id)
-    
+    _require_supabase()
+
+    report = report_submission_repo.get_by_id(report_id)
     if not report:
         raise DomainNotFoundError("Report not found")
 
@@ -270,116 +233,102 @@ def generate_authority_package(report_id: str):
         "audit_trail",
     ]
 
-    if is_supabase_available():
-        package = authority_package_repo.create(
-            report_id=report_id,
-            enterprise_id=report.get("enterprise_id"),
-            period=period_month,
-            executive_summary=executive_summary,
-            compliance_notes=compliance_notes,
-            attachments=attachments,
-        )
-        audit_log_repo.log(
-            entity_type="authority_package",
-            entity_id=package.get("authority_package_id"),
-            action="create",
-            actor_type="lgu_admin",
-            new_value={"report_id": report_id},
-        )
-    else:
-        package = {
-            "authority_package_id": f"auth_{report_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}",
-            "generated_at": datetime.now().strftime("%Y-%m-%d %I:%M:%S %p PST"),
-            "classification": "READY_FOR_HIGHER_AUTHORITY_SUBMISSION",
-            "executive_summary": executive_summary,
-            "compliance_notes": compliance_notes,
-            "attachments": attachments,
-        }
-        reporting_repository.list_authority_packages()[report_id] = package
+    package = authority_package_repo.create(
+        report_id=report_id,
+        enterprise_id=report.get("enterprise_id"),
+        period=period_month,
+        executive_summary=executive_summary,
+        compliance_notes=compliance_notes,
+        attachments=attachments,
+    )
+    audit_log_repo.log(
+        entity_type="authority_package",
+        entity_id=package.get("authority_package_id"),
+        action="create",
+        actor_type="lgu_admin",
+        new_value={"report_id": report_id},
+    )
     
     return package
 
 
 def open_reporting_window(body: ReportingWindowAction):
+    _require_supabase()
+
     enterprise = enterprise_repository.get_enterprise_account(body.enterprise_id)
     if not enterprise:
         raise DomainNotFoundError("Enterprise account not found")
 
-    if is_supabase_available():
-        window = reporting_window_repo.open_window(
-            enterprise_id=body.enterprise_id,
-            period=body.period,
-            opened_by="lgu_admin_01",
-        )
-        audit_log_repo.log(
-            entity_type="reporting_window",
-            entity_id=f"{body.enterprise_id}_{body.period}",
-            action="open",
-            actor_type="lgu_admin",
-            new_value={"status": "OPEN", "period": body.period},
-        )
-        return window
-    else:
-        window = enterprise_repository.get_reporting_window(body.enterprise_id)
-        if not window:
-            raise DomainNotFoundError("Enterprise reporting window not found")
-        window["period"] = body.period
-        window["status"] = "OPEN"
-        window["opened_at"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S-08:00")
-        window["opened_by"] = "lgu_admin_01"
-        return window
+    status = (body.status or "OPEN").upper()
+    if status not in ("OPEN", "REMIND", "WARN", "RENOTIFY"):
+        raise DomainConflictError("Invalid reporting window status for open action")
+
+    window = reporting_window_repo.open_window(
+        enterprise_id=body.enterprise_id,
+        period=body.period,
+        opened_by="lgu_admin_01",
+        message=body.message,
+        status=status,
+    )
+    audit_log_repo.log(
+        entity_type="reporting_window",
+        entity_id=f"{body.enterprise_id}_{body.period}",
+        action="open",
+        actor_type="lgu_admin",
+        new_value={"status": status, "period": body.period},
+    )
+    return window
 
 
 def close_reporting_window(body: ReportingWindowAction):
+    _require_supabase()
+
     enterprise = enterprise_repository.get_enterprise_account(body.enterprise_id)
     if not enterprise:
         raise DomainNotFoundError("Enterprise account not found")
 
-    if is_supabase_available():
-        window = reporting_window_repo.close_window(
-            enterprise_id=body.enterprise_id,
-            period=body.period,
-            closed_by="lgu_admin_01",
-        )
-        audit_log_repo.log(
-            entity_type="reporting_window",
-            entity_id=f"{body.enterprise_id}_{body.period}",
-            action="close",
-            actor_type="lgu_admin",
-            new_value={"status": "CLOSED", "period": body.period},
-        )
-        return window
-    else:
-        window = enterprise_repository.get_reporting_window(body.enterprise_id)
-        if not window:
-            raise DomainNotFoundError("Enterprise reporting window not found")
-        window["period"] = body.period
-        window["status"] = "CLOSED"
-        return window
+    window = reporting_window_repo.close_window(
+        enterprise_id=body.enterprise_id,
+        period=body.period,
+        closed_by="lgu_admin_01",
+        message=body.message,
+    )
+    audit_log_repo.log(
+        entity_type="reporting_window",
+        entity_id=f"{body.enterprise_id}_{body.period}",
+        action="close",
+        actor_type="lgu_admin",
+        new_value={"status": "CLOSED", "period": body.period},
+    )
+    return window
 
 
 def open_reporting_window_all(body: ReportingWindowBulkAction):
-    if is_supabase_available():
-        total = reporting_window_repo.open_all(body.period, "lgu_admin_01")
-        audit_log_repo.log(
-            entity_type="reporting_window",
-            entity_id=f"all_{body.period}",
-            action="open_all",
-            actor_type="lgu_admin",
-            new_value={"status": "OPEN", "period": body.period, "count": total},
-        )
-    else:
-        now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S-08:00")
-        total = 0
+    _require_supabase()
+
+    status = (body.status or "OPEN").upper()
+    if status in ("OPEN", "REMIND", "WARN", "RENOTIFY"):
+        count = 0
         for item in enterprise_repository.list_enterprise_accounts():
-            window = enterprise_repository.get_reporting_window(item["enterprise_id"])
-            if not window:
-                continue
-            total += 1
-            window["period"] = body.period
-            window["status"] = "OPEN"
-            window["opened_at"] = now
-            window["opened_by"] = "lgu_admin_01"
+            reporting_window_repo.open_window(
+                enterprise_id=item["enterprise_id"],
+                period=body.period,
+                opened_by="lgu_admin_01",
+                message=body.message,
+                status=status,
+            )
+            count += 1
+        total = count
+    else:
+        raise DomainConflictError("Invalid reporting window status for open-all action")
+
+    audit_log_repo.log(
+        entity_type="reporting_window",
+        entity_id=f"all_{body.period}",
+        action="open_all",
+        actor_type="lgu_admin",
+        new_value={"status": status, "period": body.period, "count": total},
+    )
 
     return {
         "message": "All enterprise reporting windows are OPEN",
@@ -389,24 +338,16 @@ def open_reporting_window_all(body: ReportingWindowBulkAction):
 
 
 def close_reporting_window_all(body: ReportingWindowBulkAction):
-    if is_supabase_available():
-        total = reporting_window_repo.close_all(body.period, "lgu_admin_01")
-        audit_log_repo.log(
-            entity_type="reporting_window",
-            entity_id=f"all_{body.period}",
-            action="close_all",
-            actor_type="lgu_admin",
-            new_value={"status": "CLOSED", "period": body.period, "count": total},
-        )
-    else:
-        total = 0
-        for item in enterprise_repository.list_enterprise_accounts():
-            window = enterprise_repository.get_reporting_window(item["enterprise_id"])
-            if not window:
-                continue
-            total += 1
-            window["period"] = body.period
-            window["status"] = "CLOSED"
+    _require_supabase()
+
+    total = reporting_window_repo.close_all(body.period, "lgu_admin_01")
+    audit_log_repo.log(
+        entity_type="reporting_window",
+        entity_id=f"all_{body.period}",
+        action="close_all",
+        actor_type="lgu_admin",
+        new_value={"status": "CLOSED", "period": body.period, "count": total},
+    )
 
     return {
         "message": "All enterprise reporting windows are CLOSED",
@@ -416,25 +357,18 @@ def close_reporting_window_all(body: ReportingWindowBulkAction):
 
 
 def get_lgu_enterprise_accounts(period: str | None = None):
+    _require_supabase()
+
     target_period = period or datetime.now().strftime("%Y-%m")
     accounts = []
-    
+
     for item in enterprise_repository.list_enterprise_accounts():
-        if is_supabase_available():
-            window = reporting_window_repo.get_by_enterprise(item["enterprise_id"], target_period)
-            if not window:
-                window = reporting_window_repo.get_by_enterprise_current(item["enterprise_id"])
-            has_report = report_submission_repo.exists(item["enterprise_id"], target_period)
-        else:
-            window = enterprise_repository.get_reporting_window(item["enterprise_id"])
-            has_report = any(
-                report.get("enterprise_id") == item["enterprise_id"]
-                and report.get("period", {}).get("month") == target_period
-                for report in reporting_repository.list_report_packs()
-            )
-        
+        window = reporting_window_repo.get_by_enterprise(item["enterprise_id"], target_period)
         if not window:
-            # Create a default closed window if none exists
+            window = reporting_window_repo.get_by_enterprise_current(item["enterprise_id"])
+        has_report = report_submission_repo.exists(item["enterprise_id"], target_period)
+
+        if not window:
             window = {"period": target_period, "status": "CLOSED"}
 
         accounts.append(

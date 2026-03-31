@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-03-27",
+  "generated_at": "2026-03-31",
   "http": [
     {
       "path": "/api/barangays",
@@ -56,6 +56,34 @@
         "POST"
       ],
       "name": "create_unified_detection_batch"
+    },
+    {
+      "path": "/api/enterprise/account/settings",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_enterprise_account_settings_compat"
+    },
+    {
+      "path": "/api/enterprise/account/settings/password",
+      "methods": [
+        "POST"
+      ],
+      "name": "change_enterprise_password_compat"
+    },
+    {
+      "path": "/api/enterprise/account/settings/preferences",
+      "methods": [
+        "POST"
+      ],
+      "name": "save_enterprise_preferences_compat"
+    },
+    {
+      "path": "/api/enterprise/account/settings/profile",
+      "methods": [
+        "POST"
+      ],
+      "name": "save_enterprise_account_profile_compat"
     },
     {
       "path": "/api/enterprise/accounts",
@@ -128,11 +156,53 @@
       "name": "export_enterprise_pdf"
     },
     {
+      "path": "/api/enterprise/notify-submit",
+      "methods": [
+        "POST"
+      ],
+      "name": "notify_enterprise_submit"
+    },
+    {
+      "path": "/api/enterprise/password/change",
+      "methods": [
+        "POST"
+      ],
+      "name": "change_enterprise_password"
+    },
+    {
+      "path": "/api/enterprise/preferences",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_enterprise_preferences"
+    },
+    {
+      "path": "/api/enterprise/preferences",
+      "methods": [
+        "PUT"
+      ],
+      "name": "update_enterprise_preferences"
+    },
+    {
       "path": "/api/enterprise/profile",
       "methods": [
         "GET"
       ],
       "name": "get_enterprise_profile_endpoint"
+    },
+    {
+      "path": "/api/enterprise/profile/extended",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_enterprise_profile_extended"
+    },
+    {
+      "path": "/api/enterprise/profile/extended",
+      "methods": [
+        "PUT"
+      ],
+      "name": "update_enterprise_profile_extended"
     },
     {
       "path": "/api/enterprise/recommendations",
@@ -163,6 +233,20 @@
       "name": "submit_enterprise_report"
     },
     {
+      "path": "/api/enterprise/settings",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_enterprise_settings"
+    },
+    {
+      "path": "/api/enterprise/settings",
+      "methods": [
+        "PUT"
+      ],
+      "name": "update_enterprise_settings"
+    },
+    {
       "path": "/api/enterprises",
       "methods": [
         "GET"
@@ -184,11 +268,74 @@
       "name": "health_check"
     },
     {
+      "path": "/api/lgu/compliance-actions",
+      "methods": [
+        "GET"
+      ],
+      "name": "list_compliance_actions"
+    },
+    {
+      "path": "/api/lgu/compliance-actions",
+      "methods": [
+        "POST"
+      ],
+      "name": "create_compliance_action"
+    },
+    {
       "path": "/api/lgu/enterprise-accounts",
       "methods": [
         "GET"
       ],
       "name": "get_lgu_enterprise_accounts"
+    },
+    {
+      "path": "/api/lgu/enterprise-accounts",
+      "methods": [
+        "POST"
+      ],
+      "name": "create_lgu_enterprise_account"
+    },
+    {
+      "path": "/api/lgu/enterprise-accounts/{enterprise_id}",
+      "methods": [
+        "DELETE"
+      ],
+      "name": "delete_lgu_enterprise_account"
+    },
+    {
+      "path": "/api/lgu/enterprise-accounts/{enterprise_id}",
+      "methods": [
+        "PUT"
+      ],
+      "name": "update_lgu_enterprise_account"
+    },
+    {
+      "path": "/api/lgu/infractions",
+      "methods": [
+        "GET"
+      ],
+      "name": "list_all_infractions"
+    },
+    {
+      "path": "/api/lgu/infractions",
+      "methods": [
+        "POST"
+      ],
+      "name": "create_infraction"
+    },
+    {
+      "path": "/api/lgu/infractions/{enterprise_id}",
+      "methods": [
+        "GET"
+      ],
+      "name": "list_enterprise_infractions"
+    },
+    {
+      "path": "/api/lgu/infractions/{infraction_id}/resolve",
+      "methods": [
+        "POST"
+      ],
+      "name": "resolve_infraction"
     },
     {
       "path": "/api/lgu/overview",
@@ -259,6 +406,27 @@
         "POST"
       ],
       "name": "generate_authority_package"
+    },
+    {
+      "path": "/api/lgu/settings",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_lgu_settings"
+    },
+    {
+      "path": "/api/lgu/settings",
+      "methods": [
+        "PUT"
+      ],
+      "name": "update_lgu_setting"
+    },
+    {
+      "path": "/api/lgu/settings/{setting_key}",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_lgu_setting"
     },
     {
       "path": "/api/logs",

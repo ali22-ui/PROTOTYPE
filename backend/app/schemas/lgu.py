@@ -34,3 +34,22 @@ class EnterpriseInfractionCreate(BaseModel):
     severity: str = "warning"
     source: str = "LGU_COMPLIANCE_ACTION"
     note: Optional[str] = None
+
+
+class LguEnterpriseAccountCreate(BaseModel):
+    enterprise_id: str
+    company_name: str
+    linked_lgu_id: str
+    username: str
+    temporary_password: str
+    barangay: str
+    contact_email: str
+
+
+class LguEnterpriseAccountUpdate(BaseModel):
+    company_name: Optional[str] = None
+    linked_lgu_id: Optional[str] = None
+    username: Optional[str] = None
+    temporary_password: Optional[str] = None
+    barangay: Optional[str] = None
+    contact_email: Optional[str] = None

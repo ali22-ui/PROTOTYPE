@@ -1,8 +1,11 @@
 """Repository layer package."""
 
 from app.repositories.analytics_repository import (
-    get_detection_stats,
-    get_unified_detections,
+    build_default_analytics,
+    get_enterprise_analytics,
+    get_logs_payload,
+    get_overview_payload,
+    get_reports_payload,
 )
 from app.repositories.enterprise_repository import (
     get_enterprise_account,
@@ -13,8 +16,9 @@ from app.repositories.enterprise_repository import (
     resolve_enterprise_id,
 )
 from app.repositories.geo_repository import (
-    get_barangay_by_id,
+    load_geojson_boundaries,
     list_barangays,
+    list_heatmap_points,
 )
 from app.repositories.reporting_repository import (
     add_report_pack,
@@ -47,8 +51,11 @@ from app.repositories.supabase_repositories import (
 
 __all__ = [
     # Analytics
-    "get_detection_stats",
-    "get_unified_detections",
+    "get_overview_payload",
+    "get_reports_payload",
+    "get_logs_payload",
+    "get_enterprise_analytics",
+    "build_default_analytics",
     # Enterprise
     "get_enterprise_account",
     "get_enterprise_profile",
@@ -57,8 +64,9 @@ __all__ = [
     "list_enterprises",
     "resolve_enterprise_id",
     # Geo
-    "get_barangay_by_id",
     "list_barangays",
+    "list_heatmap_points",
+    "load_geojson_boundaries",
     # Reporting (legacy)
     "add_report_pack",
     "build_report_pack",

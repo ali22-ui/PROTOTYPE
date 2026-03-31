@@ -1,6 +1,8 @@
 from fastapi import APIRouter
 
-from app.core.supabase import is_supabase_available
+from domain_exceptions import DomainNotFoundError, DomainServiceUnavailableError
+
+from app.core.supabase import get_supabase_client, is_supabase_available
 from app.repositories.supabase_repositories import (
     compliance_action_repo,
     enterprise_infraction_repo,
@@ -8,6 +10,8 @@ from app.repositories.supabase_repositories import (
 )
 from app.schemas.lgu import (
     EnterpriseComplianceAction,
+    LguEnterpriseAccountCreate,
+    LguEnterpriseAccountUpdate,
     EnterpriseInfractionCreate,
     LguSettingsUpdate,
     ReportingWindowAction,
@@ -28,6 +32,11 @@ from app.services.reporting_service import open_reporting_window_all as open_rep
 router = APIRouter(tags=["LGU"])
 
 LGU_ID = "lgu_san_pedro_001"
+
+
+def _require_supabase() -> None:
+    if not is_supabase_available():
+        raise DomainServiceUnavailableError("Supabase is required for LGU workflows")
 
 
 @router.get("/lgu/overview")
@@ -105,9 +114,8 @@ def get_lgu_enterprise_accounts(
 @router.get("/lgu/settings")
 def get_lgu_settings():
     """Get all LGU settings."""
-    if not is_supabase_available():
-        return {"settings": {}, "message": "Supabase not available"}
-    
+    _require_supabase()
+
     settings = lgu_settings_repo.list_by_lgu(LGU_ID)
     return {"lgu_id": LGU_ID, "settings": settings}
 
@@ -115,9 +123,8 @@ def get_lgu_settings():
 @router.get("/lgu/settings/{setting_key}")
 def get_lgu_setting(setting_key: str):
     """Get a specific LGU setting."""
-    if not is_supabase_available():
-        return {"error": "Supabase not available"}
-    
+    _require_supabase()
+
     value = lgu_settings_repo.get_value(LGU_ID, setting_key)
     return {"lgu_id": LGU_ID, "key": setting_key, "value": value}
 
@@ -125,11 +132,107 @@ def get_lgu_setting(setting_key: str):
 @router.put("/lgu/settings")
 def update_lgu_setting(body: LguSettingsUpdate):
     """Update an LGU setting."""
-    if not is_supabase_available():
-        return {"error": "Supabase not available"}
-    
+    _require_supabase()
+
     result = lgu_settings_repo.upsert(LGU_ID, body.setting_key, body.setting_value)
     return {"message": "Setting updated", "setting": result}
+
+
+@router.post("/lgu/enterprise-accounts")
+def create_lgu_enterprise_account(body: LguEnterpriseAccountCreate):
+    _require_supabase()
+
+    client = get_supabase_client()
+    if not client:
+        raise DomainServiceUnavailableError("Supabase client is unavailable")
+
+    enterprise_payload = {
+        "id": body.enterprise_id,
+        "company_name": body.company_name,
+        "linked_lgu_id": body.linked_lgu_id,
+        "barangay": body.barangay,
+        "contact_email": body.contact_email,
+    }
+    profile_payload = {
+        "id": body.enterprise_id,
+        "linked_lgu_id": body.linked_lgu_id,
+        "owner_name": body.username,
+    }
+
+    client.table("enterprises").upsert(enterprise_payload).execute()
+    profile_result = client.table("enterprise_profiles").upsert(profile_payload).execute()
+
+    created_profile = profile_result.data[0] if profile_result.data else profile_payload
+    return {
+        "success": True,
+        "message": "Enterprise account created successfully.",
+        "enterprise": {
+            "enterprise_id": body.enterprise_id,
+            "company_name": body.company_name,
+            "linked_lgu_id": body.linked_lgu_id,
+            "barangay": body.barangay,
+            "contact_email": body.contact_email,
+            "profile": created_profile,
+        },
+    }
+
+
+@router.put("/lgu/enterprise-accounts/{enterprise_id}")
+def update_lgu_enterprise_account(enterprise_id: str, body: LguEnterpriseAccountUpdate):
+    _require_supabase()
+
+    client = get_supabase_client()
+    if not client:
+        raise DomainServiceUnavailableError("Supabase client is unavailable")
+
+    ent_updates: dict = {}
+    profile_updates: dict = {"id": enterprise_id}
+
+    if body.company_name is not None:
+        ent_updates["company_name"] = body.company_name
+    if body.linked_lgu_id is not None:
+        ent_updates["linked_lgu_id"] = body.linked_lgu_id
+        profile_updates["linked_lgu_id"] = body.linked_lgu_id
+    if body.barangay is not None:
+        ent_updates["barangay"] = body.barangay
+    if body.contact_email is not None:
+        ent_updates["contact_email"] = body.contact_email
+    if body.username is not None:
+        profile_updates["owner_name"] = body.username
+
+    existing = client.table("enterprises").select("id").eq("id", enterprise_id).execute()
+    if not existing.data:
+        raise DomainNotFoundError("Enterprise account not found")
+
+    if ent_updates:
+        client.table("enterprises").update(ent_updates).eq("id", enterprise_id).execute()
+
+    if len(profile_updates) > 1:
+        client.table("enterprise_profiles").upsert(profile_updates).execute()
+
+    return {
+        "success": True,
+        "message": "Enterprise account updated successfully.",
+        "enterprise_id": enterprise_id,
+    }
+
+
+@router.delete("/lgu/enterprise-accounts/{enterprise_id}")
+def delete_lgu_enterprise_account(enterprise_id: str):
+    _require_supabase()
+
+    client = get_supabase_client()
+    if not client:
+        raise DomainServiceUnavailableError("Supabase client is unavailable")
+
+    existing = client.table("enterprises").select("id").eq("id", enterprise_id).execute()
+    if not existing.data:
+        raise DomainNotFoundError("Enterprise account not found")
+
+    client.table("enterprise_profiles").delete().eq("id", enterprise_id).execute()
+    client.table("enterprises").delete().eq("id", enterprise_id).execute()
+
+    return {"success": True, "message": "Enterprise account deleted successfully."}
 
 
 # ============================================
@@ -139,9 +242,8 @@ def update_lgu_setting(body: LguSettingsUpdate):
 @router.post("/lgu/compliance-actions")
 def create_compliance_action(body: EnterpriseComplianceAction):
     """Create a compliance action for an enterprise."""
-    if not is_supabase_available():
-        return {"error": "Supabase not available"}
-    
+    _require_supabase()
+
     action = compliance_action_repo.create(
         enterprise_id=body.enterprise_id,
         lgu_id=LGU_ID,
@@ -156,9 +258,8 @@ def create_compliance_action(body: EnterpriseComplianceAction):
 @router.get("/lgu/compliance-actions")
 def list_compliance_actions(period: str | None = None, enterprise_id: str | None = None):
     """List compliance actions."""
-    if not is_supabase_available():
-        return {"actions": [], "message": "Supabase not available"}
-    
+    _require_supabase()
+
     if enterprise_id:
         actions = compliance_action_repo.list_by_enterprise(enterprise_id, period)
     elif period:
@@ -176,9 +277,8 @@ def list_compliance_actions(period: str | None = None, enterprise_id: str | None
 @router.get("/lgu/infractions")
 def list_all_infractions():
     """List all infractions for this LGU."""
-    if not is_supabase_available():
-        return {"infractions": {}, "message": "Supabase not available"}
-    
+    _require_supabase()
+
     infractions = enterprise_infraction_repo.list_by_lgu(LGU_ID)
     return {"lgu_id": LGU_ID, "infractions": infractions}
 
@@ -186,9 +286,8 @@ def list_all_infractions():
 @router.get("/lgu/infractions/{enterprise_id}")
 def list_enterprise_infractions(enterprise_id: str):
     """List infractions for a specific enterprise."""
-    if not is_supabase_available():
-        return {"infractions": [], "message": "Supabase not available"}
-    
+    _require_supabase()
+
     infractions = enterprise_infraction_repo.list_by_enterprise(enterprise_id)
     return {"enterprise_id": enterprise_id, "infractions": infractions}
 
@@ -196,9 +295,8 @@ def list_enterprise_infractions(enterprise_id: str):
 @router.post("/lgu/infractions")
 def create_infraction(body: EnterpriseInfractionCreate):
     """Create an infraction for an enterprise."""
-    if not is_supabase_available():
-        return {"error": "Supabase not available"}
-    
+    _require_supabase()
+
     infraction = enterprise_infraction_repo.create(
         enterprise_id=body.enterprise_id,
         lgu_id=LGU_ID,
@@ -214,11 +312,10 @@ def create_infraction(body: EnterpriseInfractionCreate):
 @router.post("/lgu/infractions/{infraction_id}/resolve")
 def resolve_infraction(infraction_id: str):
     """Resolve an infraction."""
-    if not is_supabase_available():
-        return {"error": "Supabase not available"}
-    
+    _require_supabase()
+
     infraction = enterprise_infraction_repo.resolve(infraction_id, "lgu_admin_01")
     if not infraction:
-        return {"error": "Infraction not found"}
+        raise DomainNotFoundError("Infraction not found")
     
     return {"message": "Infraction resolved", "infraction": infraction}

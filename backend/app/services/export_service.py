@@ -1,9 +1,16 @@
 from fastapi import Response
 
-from domain_exceptions import DomainNotFoundError
+from domain_exceptions import DomainNotFoundError, DomainServiceUnavailableError
 
+from app.core.supabase import is_supabase_available
 from app.repositories import enterprise_repository, reporting_repository
+from app.repositories.supabase_repositories import authority_package_repo, report_submission_repo, reporting_window_repo
 from app.services.reporting_service import generate_authority_package
+
+
+def _require_supabase() -> None:
+    if not is_supabase_available():
+        raise DomainServiceUnavailableError("Supabase is required for export workflows")
 
 
 def export_enterprise_csv(enterprise_id: str):
@@ -26,12 +33,14 @@ def export_enterprise_csv(enterprise_id: str):
 
 
 def export_enterprise_pdf(enterprise_id: str):
+    _require_supabase()
+
     resolved_id = enterprise_repository.resolve_enterprise_id(enterprise_id)
     profile = enterprise_repository.get_enterprise_profile(resolved_id)
     if not profile:
         raise DomainNotFoundError("Enterprise profile not found")
 
-    window = enterprise_repository.get_reporting_window(resolved_id)
+    window = reporting_window_repo.get_by_enterprise_current(resolved_id) or reporting_window_repo.get_by_enterprise(resolved_id)
     if not window:
         raise DomainNotFoundError("Enterprise reporting window not found")
 
@@ -53,11 +62,13 @@ def export_enterprise_pdf(enterprise_id: str):
 
 
 def download_authority_package_pdf(report_id: str):
-    report = reporting_repository.get_report_by_id(report_id)
+    _require_supabase()
+
+    report = report_submission_repo.get_by_id(report_id)
     if not report:
         raise DomainNotFoundError("Report not found")
 
-    package = reporting_repository.list_authority_packages().get(report_id)
+    package = authority_package_repo.get_by_report(report_id)
     if package is None:
         package = generate_authority_package(report_id)
 
@@ -71,11 +82,13 @@ def download_authority_package_pdf(report_id: str):
 
 
 def download_authority_package_docx(report_id: str):
-    report = reporting_repository.get_report_by_id(report_id)
+    _require_supabase()
+
+    report = report_submission_repo.get_by_id(report_id)
     if not report:
         raise DomainNotFoundError("Report not found")
 
-    package = reporting_repository.list_authority_packages().get(report_id)
+    package = authority_package_repo.get_by_report(report_id)
     if package is None:
         package = generate_authority_package(report_id)
 

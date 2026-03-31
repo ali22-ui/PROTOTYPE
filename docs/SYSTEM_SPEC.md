@@ -19,17 +19,50 @@
 - `GET /api/enterprise/profile`
 - `GET /api/enterprise/dashboard`
 - `GET /api/enterprise/reporting-window-status`
+- `GET /api/enterprise/settings`
+- `PUT /api/enterprise/settings`
+- `GET /api/enterprise/profile/extended`
+- `PUT /api/enterprise/profile/extended`
+- `GET /api/enterprise/preferences`
+- `PUT /api/enterprise/preferences`
+- `POST /api/enterprise/password/change`
 - `POST /api/enterprise/export/csv`
 - `POST /api/enterprise/export/pdf`
 - `POST /api/enterprise/reports/submit`
+- `GET /api/enterprise/reports/history`
+
+Compatibility routes maintained for one release cycle:
+
+- `GET /api/enterprise/account/settings`
+- `POST /api/enterprise/account/settings/profile`
+- `POST /api/enterprise/account/settings/password`
+- `POST /api/enterprise/account/settings/preferences`
 
 ### LGU
 
 - `GET /api/lgu/overview`
 - `GET /api/lgu/reports`
 - `GET /api/lgu/reports/{report_id}`
+- `POST /api/lgu/reports/{report_id}/generate-authority-package`
+- `POST /api/lgu/reports/{report_id}/authority-package/pdf`
+- `POST /api/lgu/reports/{report_id}/authority-package/docx`
 - `POST /api/lgu/reporting-window/open`
 - `POST /api/lgu/reporting-window/close`
+- `POST /api/lgu/reporting-window/open-all`
+- `POST /api/lgu/reporting-window/close-all`
+- `GET /api/lgu/enterprise-accounts`
+- `POST /api/lgu/enterprise-accounts`
+- `PUT /api/lgu/enterprise-accounts/{enterprise_id}`
+- `DELETE /api/lgu/enterprise-accounts/{enterprise_id}`
+- `GET /api/lgu/settings`
+- `GET /api/lgu/settings/{setting_key}`
+- `PUT /api/lgu/settings`
+- `POST /api/lgu/compliance-actions`
+- `GET /api/lgu/compliance-actions`
+- `GET /api/lgu/infractions`
+- `GET /api/lgu/infractions/{enterprise_id}`
+- `POST /api/lgu/infractions`
+- `POST /api/lgu/infractions/{infraction_id}/resolve`
 
 ## State Rules
 
