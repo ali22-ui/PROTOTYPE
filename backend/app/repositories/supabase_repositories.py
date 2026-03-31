@@ -6,10 +6,16 @@ This module provides repository implementations that persist data to Supabase
 instead of in-memory runtime stores.
 """
 
+import logging
 from datetime import datetime
 from typing import Optional
 
+from postgrest.exceptions import APIError
+
 from app.core.supabase import get_supabase_client, is_supabase_available
+from domain_exceptions import DomainServiceUnavailableError
+
+logger = logging.getLogger(__name__)
 
 
 class SupabaseRepository:
@@ -49,10 +55,23 @@ class ReportingWindowRepository(SupabaseRepository):
         else:
             query = query.order("period", desc=True).limit(1)
 
-        result = query.execute()
-        if result.data and len(result.data) > 0:
-            return self._to_dict(result.data[0])
-        return None
+        try:
+            result = query.execute()
+            if result.data and len(result.data) > 0:
+                return self._to_dict(result.data[0])
+            return None
+        except APIError as e:
+            # Handle both dict and string error formats
+            error_dict = e.args[0] if e.args and isinstance(e.args[0], dict) else {}
+            error_code = error_dict.get("code", "")
+            error_msg = error_dict.get("message", str(e))
+            
+            if error_code == "42501":  # Permission denied
+                logger.warning(f"Permission denied for {self.TABLE}: {error_msg}")
+                raise DomainServiceUnavailableError(
+                    f"Database access denied for reporting windows. Please check Supabase RLS policies."
+                )
+            raise
 
     def get_by_enterprise_current(self, enterprise_id: str) -> Optional[dict]:
         """Get current period reporting window for an enterprise."""
@@ -61,8 +80,21 @@ class ReportingWindowRepository(SupabaseRepository):
     def list_by_period(self, period: str) -> list[dict]:
         """List all reporting windows for a given period."""
         client = self._get_client()
-        result = client.table(self.TABLE).select("*").eq("period", period).execute()
-        return [self._to_dict(row) for row in result.data] if result.data else []
+        try:
+            result = client.table(self.TABLE).select("*").eq("period", period).execute()
+            return [self._to_dict(row) for row in result.data] if result.data else []
+        except APIError as e:
+            # Handle both dict and string error formats
+            error_dict = e.args[0] if e.args and isinstance(e.args[0], dict) else {}
+            error_code = error_dict.get("code", "")
+            error_msg = error_dict.get("message", str(e))
+            
+            if error_code == "42501":  # Permission denied
+                logger.warning(f"Permission denied for {self.TABLE}: {error_msg}")
+                raise DomainServiceUnavailableError(
+                    f"Database access denied for reporting windows. Please check Supabase RLS policies."
+                )
+            raise
 
     def list_all_current(self) -> list[dict]:
         """List all reporting windows for the current period."""
