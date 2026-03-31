@@ -124,9 +124,11 @@ class ReportingWindowRepository(SupabaseRepository):
         status: str,
         opened_by: Optional[str] = None,
         message: Optional[str] = None,
-        scope: str = "ENTERPRISE",
     ) -> dict:
-        """Create or update a reporting window."""
+        """Create or update a reporting window.
+        
+        Note: PRD_013 simplified schema - removed scope column.
+        """
         client = self._get_client()
         now = self._now_iso()
 
@@ -134,7 +136,6 @@ class ReportingWindowRepository(SupabaseRepository):
             "enterprise_id": enterprise_id,
             "period": period,
             "status": status,
-            "scope": scope,
             "updated_at": now,
         }
 
@@ -224,7 +225,10 @@ class ReportingWindowRepository(SupabaseRepository):
 
     @staticmethod
     def _to_dict(row: dict) -> dict:
-        """Convert database row to API response format."""
+        """Convert database row to API response format.
+        
+        Note: PRD_013 simplified schema - removed scope column.
+        """
         return {
             "enterprise_id": row.get("enterprise_id"),
             "period": row.get("period"),
@@ -234,7 +238,6 @@ class ReportingWindowRepository(SupabaseRepository):
             "closed_at": row.get("closed_at"),
             "closed_by": row.get("closed_by"),
             "message": row.get("message"),
-            "scope": row.get("scope"),
         }
 
 
@@ -294,13 +297,20 @@ class ReportSubmissionRepository(SupabaseRepository):
         self,
         enterprise_id: str,
         period: str,
-        enterprise_name: str,
         linked_lgu_id: Optional[str] = None,
-        payload: Optional[dict] = None,
         submitted_by: Optional[str] = None,
+        total_visitors: int = 0,
+        male_count: int = 0,
+        female_count: int = 0,
+        row_count: int = 0,
+        notes: Optional[str] = None,
         **kwargs,
     ) -> dict:
-        """Create a new report submission."""
+        """Create a new report submission.
+        
+        Note: PRD_013 simplified schema - removed payload, enterprise_name, source columns.
+        KPIs should be pre-calculated and passed directly.
+        """
         client = self._get_client()
         report_id = f"rpt_{enterprise_id}_{period.replace('-', '_')}"
 
@@ -308,26 +318,17 @@ class ReportSubmissionRepository(SupabaseRepository):
             "id": report_id,
             "enterprise_id": enterprise_id,
             "period": period,
-            "enterprise_name": enterprise_name,
             "linked_lgu_id": linked_lgu_id,
             "status": "SUBMITTED",
             "submitted_at": self._now_iso(),
             "submitted_by": submitted_by,
-            "payload": payload,
+            "total_visitors": total_visitors,
+            "male_count": male_count,
+            "female_count": female_count,
+            "row_count": row_count,
+            "notes": notes,
             **kwargs,
         }
-
-        # Calculate KPIs from payload if provided
-        if payload and isinstance(payload, dict):
-            logs = payload.get("camera_logs", [])
-            if logs:
-                data["row_count"] = len(logs)
-                data["total_visitors"] = sum(log.get("totalCount", 0) for log in logs)
-                data["male_count"] = sum(1 for log in logs if log.get("sex") == "Male")
-                data["female_count"] = sum(1 for log in logs if log.get("sex") == "Female")
-                tourist_count = sum(1 for log in logs if log.get("classification") == "Tourist")
-                data["total_tourists"] = tourist_count
-                data["total_residents"] = len(logs) - tourist_count
 
         result = client.table(self.TABLE).insert(data).execute()
         if result.data and len(result.data) > 0:
@@ -338,10 +339,12 @@ class ReportSubmissionRepository(SupabaseRepository):
         self,
         enterprise_id: str,
         period: str,
-        enterprise_name: str,
         **kwargs,
     ) -> dict:
-        """Create or update a report submission."""
+        """Create or update a report submission.
+        
+        Note: PRD_013 simplified schema - enterprise_name removed (lookup from enterprises table).
+        """
         client = self._get_client()
         report_id = f"rpt_{enterprise_id}_{period.replace('-', '_')}"
 
@@ -349,7 +352,6 @@ class ReportSubmissionRepository(SupabaseRepository):
             "id": report_id,
             "enterprise_id": enterprise_id,
             "period": period,
-            "enterprise_name": enterprise_name,
             "updated_at": self._now_iso(),
             **kwargs,
         }
@@ -365,11 +367,14 @@ class ReportSubmissionRepository(SupabaseRepository):
 
     @staticmethod
     def _to_dict(row: dict) -> dict:
-        """Convert database row to API response format."""
+        """Convert database row to API response format.
+        
+        Note: PRD_013 simplified schema - removed payload, source, enterprise_name.
+        tourist/resident counts removed (can be derived from visitor_statistics if needed).
+        """
         return {
             "report_id": row.get("id"),
             "enterprise_id": row.get("enterprise_id"),
-            "enterprise_name": row.get("enterprise_name"),
             "linked_lgu_id": row.get("linked_lgu_id"),
             "period": {"month": row.get("period")},
             "status": row.get("status"),
@@ -377,16 +382,11 @@ class ReportSubmissionRepository(SupabaseRepository):
             "submitted_by": row.get("submitted_by"),
             "kpis": {
                 "total_visitors": row.get("total_visitors", 0),
-                "total_tourists": row.get("total_tourists", 0),
-                "total_residents": row.get("total_residents", 0),
                 "male_count": row.get("male_count", 0),
                 "female_count": row.get("female_count", 0),
-                "avg_dwell_minutes": row.get("avg_dwell_minutes", 0),
-                "peak_visitor_hours": row.get("peak_hours", []),
             },
-            "camera_logs": row.get("payload", {}).get("camera_logs", []) if row.get("payload") else [],
             "row_count": row.get("row_count", 0),
-            "source": row.get("source", "enterprise-report-center"),
+            "notes": row.get("notes"),
         }
 
 
@@ -446,11 +446,12 @@ class AuthorityPackageRepository(SupabaseRepository):
         enterprise_id: str,
         period: str,
         executive_summary: dict,
-        compliance_notes: Optional[list] = None,
-        attachments: Optional[list] = None,
         generated_by: Optional[str] = None,
     ) -> dict:
-        """Create a new authority package."""
+        """Create a new authority package.
+        
+        Note: PRD_013 simplified schema - removed compliance_notes, attachments columns.
+        """
         client = self._get_client()
         now = self._now_iso()
         package_id = f"auth_{report_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
@@ -464,13 +465,6 @@ class AuthorityPackageRepository(SupabaseRepository):
             "generated_at": now,
             "generated_by": generated_by or "lgu_admin_01",
             "executive_summary": executive_summary,
-            "compliance_notes": compliance_notes or [],
-            "attachments": attachments or [
-                "enterprise_monthly_pdf",
-                "detailed_detection_csv",
-                "demographic_visual_summary",
-                "audit_trail",
-            ],
         }
 
         result = client.table(self.TABLE).insert(data).execute()
@@ -480,7 +474,10 @@ class AuthorityPackageRepository(SupabaseRepository):
 
     @staticmethod
     def _to_dict(row: dict) -> dict:
-        """Convert database row to API response format."""
+        """Convert database row to API response format.
+        
+        Note: PRD_013 simplified schema - removed compliance_notes, attachments.
+        """
         return {
             "authority_package_id": row.get("id"),
             "report_id": row.get("report_id"),
@@ -490,8 +487,6 @@ class AuthorityPackageRepository(SupabaseRepository):
             "generated_at": row.get("generated_at"),
             "generated_by": row.get("generated_by"),
             "executive_summary": row.get("executive_summary", {}),
-            "compliance_notes": row.get("compliance_notes", []),
-            "attachments": row.get("attachments", []),
         }
 
 
@@ -608,72 +603,129 @@ class EnterpriseActionRepository(SupabaseRepository):
         }
 
 
-class LguSettingsRepository(SupabaseRepository):
-    """Repository for LGU settings operations."""
+class LguRepository(SupabaseRepository):
+    """Repository for LGU operations.
+    
+    PRD_013: LGU settings are now flattened into the lgus table (no separate lgu_settings).
+    """
 
-    TABLE = "lgu_settings"
+    TABLE = "lgus"
+
+    def get_by_id(self, lgu_id: str) -> Optional[dict]:
+        """Get an LGU by its ID."""
+        client = self._get_client()
+        result = client.table(self.TABLE).select("*").eq("id", lgu_id).execute()
+        if result.data and len(result.data) > 0:
+            return self._to_dict(result.data[0])
+        return None
+
+    def list_all(self) -> list[dict]:
+        """List all LGUs."""
+        client = self._get_client()
+        result = client.table(self.TABLE).select("*").execute()
+        return [self._to_dict(row) for row in result.data] if result.data else []
+
+    def get_settings(self, lgu_id: str) -> dict:
+        """Get settings for an LGU (now stored as columns in lgus table)."""
+        lgu = self.get_by_id(lgu_id)
+        if lgu:
+            return {
+                "reporting_reminder_days": lgu.get("reporting_reminder_days", 7),
+                "reporting_warning_days": lgu.get("reporting_warning_days", 3),
+                "timezone": lgu.get("timezone", "Asia/Manila"),
+            }
+        return {
+            "reporting_reminder_days": 7,
+            "reporting_warning_days": 3,
+            "timezone": "Asia/Manila",
+        }
+
+    def update_settings(
+        self,
+        lgu_id: str,
+        reporting_reminder_days: Optional[int] = None,
+        reporting_warning_days: Optional[int] = None,
+        timezone: Optional[str] = None,
+    ) -> Optional[dict]:
+        """Update LGU settings."""
+        client = self._get_client()
+        data: dict = {"updated_at": self._now_iso()}
+        
+        if reporting_reminder_days is not None:
+            data["reporting_reminder_days"] = reporting_reminder_days
+        if reporting_warning_days is not None:
+            data["reporting_warning_days"] = reporting_warning_days
+        if timezone is not None:
+            data["timezone"] = timezone
+
+        result = client.table(self.TABLE).update(data).eq("id", lgu_id).execute()
+        if result.data and len(result.data) > 0:
+            return self._to_dict(result.data[0])
+        return None
+
+    @staticmethod
+    def _to_dict(row: dict) -> dict:
+        """Convert database row to API response format."""
+        return {
+            "id": row.get("id"),
+            "name": row.get("name"),
+            "city": row.get("city"),
+            "province": row.get("province"),
+            "contact_email": row.get("contact_email"),
+            "reporting_reminder_days": row.get("reporting_reminder_days", 7),
+            "reporting_warning_days": row.get("reporting_warning_days", 3),
+            "timezone": row.get("timezone", "Asia/Manila"),
+            "created_at": row.get("created_at"),
+            "updated_at": row.get("updated_at"),
+        }
+
+
+class LguSettingsRepository(SupabaseRepository):
+    """DEPRECATED: Repository for LGU settings operations.
+    
+    PRD_013: This table no longer exists. Settings are now columns in the lgus table.
+    Use LguRepository.get_settings() and LguRepository.update_settings() instead.
+    
+    This class is kept for backward compatibility but delegates to LguRepository.
+    """
+
+    def __init__(self):
+        self._lgu_repo = LguRepository()
 
     def get(self, lgu_id: str, setting_key: str) -> Optional[dict]:
         """Get a specific setting for an LGU."""
-        client = self._get_client()
-        result = (
-            client.table(self.TABLE)
-            .select("*")
-            .eq("lgu_id", lgu_id)
-            .eq("setting_key", setting_key)
-            .execute()
-        )
-        if result.data and len(result.data) > 0:
-            return result.data[0]
+        settings = self._lgu_repo.get_settings(lgu_id)
+        if setting_key in settings:
+            return {"lgu_id": lgu_id, "setting_key": setting_key, "setting_value": settings[setting_key]}
         return None
 
     def get_value(self, lgu_id: str, setting_key: str, default=None):
         """Get the value of a specific setting."""
-        setting = self.get(lgu_id, setting_key)
-        if setting:
-            return setting.get("setting_value", default)
-        return default
+        settings = self._lgu_repo.get_settings(lgu_id)
+        return settings.get(setting_key, default)
 
     def list_by_lgu(self, lgu_id: str) -> dict:
         """List all settings for an LGU as a key-value dict."""
-        client = self._get_client()
-        result = client.table(self.TABLE).select("*").eq("lgu_id", lgu_id).execute()
-        settings = {}
-        if result.data:
-            for row in result.data:
-                settings[row.get("setting_key")] = row.get("setting_value")
-        return settings
+        return self._lgu_repo.get_settings(lgu_id)
 
     def upsert(self, lgu_id: str, setting_key: str, setting_value) -> dict:
         """Create or update a setting."""
-        client = self._get_client()
-        data = {
-            "lgu_id": lgu_id,
-            "setting_key": setting_key,
-            "setting_value": setting_value,
-            "updated_at": self._now_iso(),
-        }
-
-        result = client.table(self.TABLE).upsert(
-            data,
-            on_conflict="lgu_id,setting_key"
-        ).execute()
-
-        if result.data and len(result.data) > 0:
-            return result.data[0]
-        return data
+        kwargs = {setting_key: setting_value}
+        self._lgu_repo.update_settings(lgu_id, **kwargs)
+        return {"lgu_id": lgu_id, "setting_key": setting_key, "setting_value": setting_value}
 
     def delete(self, lgu_id: str, setting_key: str) -> bool:
-        """Delete a specific setting."""
-        client = self._get_client()
-        result = (
-            client.table(self.TABLE)
-            .delete()
-            .eq("lgu_id", lgu_id)
-            .eq("setting_key", setting_key)
-            .execute()
-        )
-        return bool(result.data)
+        """Delete a specific setting (reset to default)."""
+        # In the new schema, we can't really delete - just reset to default
+        defaults = {
+            "reporting_reminder_days": 7,
+            "reporting_warning_days": 3,
+            "timezone": "Asia/Manila",
+        }
+        if setting_key in defaults:
+            self._lgu_repo.update_settings(lgu_id, **{setting_key: defaults[setting_key]})
+            return True
+        return False
 
 
 class SystemSettingsRepository(SupabaseRepository):
@@ -926,9 +978,11 @@ class ComplianceActionRepository(SupabaseRepository):
         action_type: str,
         triggered_by: str,
         message: Optional[str] = None,
-        scope: str = "ENTERPRISE",
     ) -> dict:
-        """Create a new compliance action record."""
+        """Create a new compliance action record.
+        
+        Note: PRD_013 simplified schema - removed scope column.
+        """
         client = self._get_client()
         data = {
             "enterprise_id": enterprise_id,
@@ -938,7 +992,6 @@ class ComplianceActionRepository(SupabaseRepository):
             "triggered_by": triggered_by,
             "triggered_at": self._now_iso(),
             "message": message,
-            "scope": scope,
         }
 
         result = client.table(self.TABLE).insert(data).execute()
@@ -948,7 +1001,10 @@ class ComplianceActionRepository(SupabaseRepository):
 
     @staticmethod
     def _to_dict(row: dict) -> dict:
-        """Convert database row to API response format."""
+        """Convert database row to API response format.
+        
+        Note: PRD_013 simplified schema - removed scope column.
+        """
         return {
             "id": row.get("id"),
             "enterprise_id": row.get("enterprise_id"),
@@ -958,7 +1014,6 @@ class ComplianceActionRepository(SupabaseRepository):
             "message": row.get("message"),
             "triggered_by": row.get("triggered_by"),
             "triggered_at": row.get("triggered_at"),
-            "scope": row.get("scope"),
         }
 
 
@@ -976,9 +1031,11 @@ class AuditLogRepository(SupabaseRepository):
         actor_type: Optional[str] = None,
         old_value: Optional[dict] = None,
         new_value: Optional[dict] = None,
-        metadata: Optional[dict] = None,
     ) -> dict:
-        """Create an audit log entry."""
+        """Create an audit log entry.
+        
+        Note: PRD_013 simplified schema - removed metadata column.
+        """
         client = self._get_client()
         data = {
             "entity_type": entity_type,
@@ -988,7 +1045,6 @@ class AuditLogRepository(SupabaseRepository):
             "actor_type": actor_type,
             "old_value": old_value,
             "new_value": new_value,
-            "metadata": metadata or {},
             "created_at": self._now_iso(),
         }
 
@@ -1017,7 +1073,8 @@ reporting_window_repo = ReportingWindowRepository()
 report_submission_repo = ReportSubmissionRepository()
 authority_package_repo = AuthorityPackageRepository()
 enterprise_action_repo = EnterpriseActionRepository()
-lgu_settings_repo = LguSettingsRepository()
+lgu_repo = LguRepository()
+lgu_settings_repo = LguSettingsRepository()  # Deprecated, use lgu_repo
 system_settings_repo = SystemSettingsRepository()
 enterprise_infraction_repo = EnterpriseInfractionRepository()
 compliance_action_repo = ComplianceActionRepository()
