@@ -61,7 +61,7 @@ export default function EnterpriseShell({ user, onLogout }: EnterpriseShellProps
 
   return (
     <div className="flex h-screen overflow-hidden bg-brand-bg text-brand-dark">
-      <aside className="sticky top-0 flex h-screen w-[280px] flex-shrink-0 flex-col overflow-hidden border-r border-brand-mid/55 bg-gradient-to-b from-brand-dark via-brand-dark to-brand-accent text-brand-cream shadow-xl shadow-black/15">
+      <aside className="sticky top-0 flex h-screen w-70 shrink-0 flex-col overflow-hidden border-r border-brand-mid/55 bg-linear-to-b from-brand-dark via-brand-dark to-brand-accent text-brand-cream shadow-xl shadow-black/15">
         <div className="border-b border-brand-mid/50 p-5">
           <p className="text-xs uppercase tracking-widest text-brand-cream/80">Enterprise Portal</p>
           <h1 className="mt-1 text-xl font-bold leading-tight">{user.companyName}</h1>

@@ -59,7 +59,7 @@ export default function CameraPage({ compactLayout = false }: CameraPageProps): 
           <button
             type="button"
             onClick={() => handleModeChange(CameraModeValue.LIVE)}
-            className={`flex min-w-[150px] flex-1 items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors lg:flex-none ${
+            className={`flex min-w-37.5 flex-1 items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors lg:flex-none ${
               mode === CameraModeValue.LIVE
                 ? 'bg-brand-dark text-white'
                 : 'text-brand-dark hover:bg-brand-mid/40'
@@ -71,7 +71,7 @@ export default function CameraPage({ compactLayout = false }: CameraPageProps): 
           <button
             type="button"
             onClick={() => handleModeChange(CameraModeValue.IP_WEBCAM)}
-            className={`flex min-w-[150px] flex-1 items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors lg:flex-none ${
+            className={`flex min-w-37.5 flex-1 items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors lg:flex-none ${
               mode === CameraModeValue.IP_WEBCAM
                 ? 'bg-brand-accent text-white'
                 : 'text-brand-dark hover:bg-brand-mid/40'

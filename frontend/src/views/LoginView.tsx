@@ -42,7 +42,7 @@ export default function LoginView({ onLogin }: LoginViewProps): JSX.Element {
   };
 
   return (
-    <div className="grid min-h-screen place-items-center bg-gradient-to-br from-brand-dark via-brand-mid to-brand-dark p-4">
+    <div className="grid min-h-screen place-items-center bg-linear-to-br from-brand-dark via-brand-mid to-brand-dark p-4">
       <div className="grid w-full max-w-6xl overflow-hidden rounded-3xl border border-brand-mid/45 bg-brand-dark/50 shadow-2xl backdrop-blur md:grid-cols-[360px_1fr]">
         <section className="flex flex-col justify-between bg-brand-dark/80 p-8 text-brand-cream">
           <div>

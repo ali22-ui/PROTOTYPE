@@ -340,7 +340,7 @@ export default function LguComplianceModal({
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/70 p-4">
-      <div className="flex h-[95vh] w-full max-w-[96rem] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+      <div className="flex h-[95vh] w-full max-w-384 flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
         <header className="flex items-start justify-between gap-3 border-b px-5 py-4" style={{ backgroundColor: BRAND_DARK }}>
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-brand-cream">LGU Compliance Modal</p>
@@ -496,7 +496,7 @@ export default function LguComplianceModal({
                               {renderEditor(form)}
                             </div>
                           ) : (
-                            <div className="grid h-full min-h-[240px] place-items-center rounded-lg bg-slate-50 p-4 text-center text-sm text-slate-500">
+                            <div className="grid h-full min-h-60 place-items-center rounded-lg bg-slate-50 p-4 text-center text-sm text-slate-500">
                               Click <span className="mx-1 font-semibold" style={{ color: BRAND_DARK }}>Edit</span>
                               to open the field editor. PDF preview updates automatically as you type.
                             </div>

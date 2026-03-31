@@ -104,7 +104,7 @@ export default function ArchivedReportsView(): JSX.Element {
                 setPage(1);
               }}
               placeholder="Search reports..."
-              className="w-full min-w-[220px] max-w-xs rounded-lg border border-brand-mid/70 px-3 py-2 text-sm outline-none focus:border-brand-dark"
+              className="w-full min-w-55 max-w-xs rounded-lg border border-brand-mid/70 px-3 py-2 text-sm outline-none focus:border-brand-dark"
             />
 
             <div className="flex items-center gap-1 text-sm">
@@ -155,7 +155,7 @@ export default function ArchivedReportsView(): JSX.Element {
         </div>
 
         <div className="overflow-hidden rounded-xl bg-brand-bg/45">
-          <div className="max-h-[420px] overflow-y-auto">
+          <div className="max-h-105 overflow-y-auto">
             <table className="min-w-full text-sm">
               <thead className="sticky top-0 z-20 bg-brand-dark/90 text-left text-xs uppercase tracking-wide text-white shadow-sm backdrop-blur-sm">
                 <tr>

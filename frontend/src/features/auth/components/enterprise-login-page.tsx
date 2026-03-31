@@ -37,7 +37,7 @@ export default function EnterpriseLoginPage({
   };
 
   return (
-    <div className="grid min-h-screen place-items-center bg-gradient-to-br from-slate-900 via-slate-800 to-primary-900 p-4">
+    <div className="grid min-h-screen place-items-center bg-linear-to-br from-slate-900 via-slate-800 to-primary-900 p-4">
       <div className="grid w-full max-w-6xl overflow-hidden rounded-3xl border border-slate-700/50 bg-slate-900/60 shadow-2xl backdrop-blur md:grid-cols-[360px_1fr]">
         <section className="flex flex-col justify-between bg-slate-900/80 p-8 text-white">
           <div>

@@ -157,7 +157,7 @@ export default function DashboardView(): JSX.Element {
             <h3 className="mb-2 text-sm font-semibold text-brand-dark">
               Visitor Demographic - Sex, Visitor and Tourist Breakdown
             </h3>
-            <div className="h-[220px] w-full">
+            <div className="h-55 w-full">
               <ResponsiveContainer>
                 <AreaChart data={layoutData.weeklyDemographicSeries}>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" stroke={GRID_STROKE} />
@@ -180,7 +180,7 @@ export default function DashboardView(): JSX.Element {
 
           <article className="rounded-xl border border-brand-mid/70 bg-white p-3 shadow-sm">
             <h3 className="mb-2 text-sm font-semibold text-brand-dark">Residence Mix Distribution</h3>
-            <div className="h-[198px] w-full">
+            <div className="h-49.5 w-full">
               <ResponsiveContainer>
                 <PieChart margin={RESIDENCE_PIE_MARGIN}>
                   <Pie
@@ -221,7 +221,7 @@ export default function DashboardView(): JSX.Element {
 
         <article className="rounded-xl border border-brand-mid/70 bg-white p-3 shadow-sm">
           <h3 className="mb-2 text-sm font-semibold text-brand-dark">Hourly Demographic Volume (1:00 - 23:00)</h3>
-          <div className="h-[360px] w-full md:h-[390px]">
+          <div className="h-90 w-full md:h-97.5">
             <ResponsiveContainer>
               <AreaChart data={layoutData.hourlyDemographicSeries}>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" stroke={GRID_STROKE} />

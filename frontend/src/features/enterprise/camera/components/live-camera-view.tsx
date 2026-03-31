@@ -46,7 +46,9 @@ interface LiveCameraViewProps {
   compactLayout?: boolean;
 }
 
-export default function LiveCameraView({ compactLayout = false }: LiveCameraViewProps): JSX.Element {
+export default function LiveCameraView({
+  compactLayout = false,
+}: LiveCameraViewProps): JSX.Element {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
@@ -159,7 +161,10 @@ export default function LiveCameraView({ compactLayout = false }: LiveCameraView
 
   const addDetectionLog = useCallback((message: string): void => {
     const timestamp = new Date().toLocaleTimeString();
-    setDetectionLogs((prev) => [`[${timestamp}] ${message}`, ...prev.slice(0, 99)]);
+    setDetectionLogs((prev) => [
+      `[${timestamp}] ${message}`,
+      ...prev.slice(0, 99),
+    ]);
   }, []);
 
   const flushBatch = useCallback(async (): Promise<void> => {
@@ -184,34 +189,42 @@ export default function LiveCameraView({ compactLayout = false }: LiveCameraView
       const videoElement = videoRef.current;
       if (!videoElement) return;
 
-      const deduplicatedDetections = await deduplication.processFrame(rawDetections, videoElement);
+      const deduplicatedDetections = await deduplication.processFrame(
+        rawDetections,
+        videoElement,
+      );
 
-      const detectionForClassification = deduplicatedDetections.map((detection) => ({
-        ...detection,
-        dwellSeconds: detection.dwellSeconds ?? 0,
-        bbox: detection.bboxPercent || {
-          x: (detection.bbox.originX / (videoElement.videoWidth || 1)) * 100,
-          y: (detection.bbox.originY / (videoElement.videoHeight || 1)) * 100,
-          w: (detection.bbox.width / (videoElement.videoWidth || 1)) * 100,
-          h: (detection.bbox.height / (videoElement.videoHeight || 1)) * 100,
-        },
-      }));
+      const detectionForClassification = deduplicatedDetections.map(
+        (detection) => ({
+          ...detection,
+          dwellSeconds: detection.dwellSeconds ?? 0,
+          bbox: detection.bboxPercent || {
+            x: (detection.bbox.originX / (videoElement.videoWidth || 1)) * 100,
+            y: (detection.bbox.originY / (videoElement.videoHeight || 1)) * 100,
+            w: (detection.bbox.width / (videoElement.videoWidth || 1)) * 100,
+            h: (detection.bbox.height / (videoElement.videoHeight || 1)) * 100,
+          },
+        }),
+      );
 
       const classified = isClassificationReady
         ? await classifyDetections(videoElement, detectionForClassification)
         : detectionForClassification.map((detection) => ({
-          ...detection,
-          sex: Gender.UNKNOWN,
-          sexConfidence: 0,
-        }));
+            ...detection,
+            sex: Gender.UNKNOWN,
+            sexConfidence: 0,
+          }));
 
       let newMale = 0;
       let newFemale = 0;
       let newUnknown = 0;
 
       for (const detection of classified) {
-        const normalizedBbox = detection.bboxPercent
-          || (detection.bbox && 'x' in detection.bbox ? detection.bbox : undefined);
+        const normalizedBbox =
+          detection.bboxPercent ||
+          (detection.bbox && 'x' in detection.bbox
+            ? detection.bbox
+            : undefined);
 
         if (detection.sex === Gender.MALE) newMale += 1;
         else if (detection.sex === Gender.FEMALE) newFemale += 1;
@@ -247,21 +260,23 @@ export default function LiveCameraView({ compactLayout = false }: LiveCameraView
       if (classified.length > 0) {
         const uniqueCount = deduplication.stats.uniquePersons;
         const labels = classified
-          .map((detection) => (
+          .map((detection) =>
             detection.sex === Gender.MALE
               ? 'Male'
               : detection.sex === Gender.FEMALE
                 ? 'Female'
-                : 'Unknown'
-          ))
+                : 'Unknown',
+          )
           .join(', ');
-        addDetectionLog(`[${uniqueCount} unique] ${classified.length} detection(s): ${labels}`);
+        addDetectionLog(
+          `[${uniqueCount} unique] ${classified.length} detection(s): ${labels}`,
+        );
       }
 
       const now = Date.now();
       if (
-        batchBufferRef.current.length >= MAX_BATCH_SIZE
-        || now - lastBatchTimeRef.current >= BATCH_INTERVAL_MS
+        batchBufferRef.current.length >= MAX_BATCH_SIZE ||
+        now - lastBatchTimeRef.current >= BATCH_INTERVAL_MS
       ) {
         lastBatchTimeRef.current = now;
         void flushBatch();
@@ -322,7 +337,8 @@ export default function LiveCameraView({ compactLayout = false }: LiveCameraView
       const offsetX = (containerW - renderedW) / 2;
       const offsetY = (containerH - renderedH) / 2;
 
-      const activeDetections = deduplication.getActiveDetections() as OverlayDetection[];
+      const activeDetections =
+        deduplication.getActiveDetections() as OverlayDetection[];
 
       for (const detection of activeDetections) {
         const bbox = detection.bboxPercent || detection.bbox;
@@ -343,13 +359,18 @@ export default function LiveCameraView({ compactLayout = false }: LiveCameraView
         const sex = detection.sex || detection.gender || Gender.UNKNOWN;
         const isMale = sex === Gender.MALE || sex === 'male';
         const isFemale = sex === Gender.FEMALE || sex === 'female';
-        const strokeColor = isMale ? BRAND_DARK : isFemale ? BRAND_ACCENT : BRAND_DARK;
+        const strokeColor = isMale
+          ? BRAND_DARK
+          : isFemale
+            ? BRAND_ACCENT
+            : BRAND_DARK;
 
         ctx.strokeStyle = strokeColor;
         ctx.lineWidth = 2.5;
         ctx.strokeRect(x, y, w, h);
 
-        const hasReId = detection.reIdMethod && detection.reIdMethod !== ReIdMethod.NONE;
+        const hasReId =
+          detection.reIdMethod && detection.reIdMethod !== ReIdMethod.NONE;
         if (hasReId) {
           const corner = Math.min(w, h) * 0.14;
           ctx.strokeStyle = BRAND_ACCENT;
@@ -380,7 +401,8 @@ export default function LiveCameraView({ compactLayout = false }: LiveCameraView
           ctx.stroke();
         }
 
-        const confidence = detection.sexConfidence || detection.genderConfidence;
+        const confidence =
+          detection.sexConfidence || detection.genderConfidence;
         const label = `${isMale ? 'Male' : isFemale ? 'Female' : 'Person'}${
           confidence ? ` ${Math.round(confidence * 100)}%` : ''
         }`;
@@ -418,7 +440,9 @@ export default function LiveCameraView({ compactLayout = false }: LiveCameraView
       return (
         <div className="flex h-full flex-col items-center justify-center gap-4 text-brand-dark/70">
           <Camera size={58} className="opacity-60" />
-          <p className="text-base font-semibold text-brand-dark">Camera not started</p>
+          <p className="text-base font-semibold text-brand-dark">
+            Camera not started
+          </p>
           <button
             type="button"
             onClick={() => {
@@ -460,15 +484,17 @@ export default function LiveCameraView({ compactLayout = false }: LiveCameraView
     }
 
     if (
-      cameraState === CameraState.NOT_FOUND
-      || cameraState === CameraState.IN_USE
-      || cameraState === CameraState.NOT_SUPPORTED
-      || cameraState === CameraState.ERROR
+      cameraState === CameraState.NOT_FOUND ||
+      cameraState === CameraState.IN_USE ||
+      cameraState === CameraState.NOT_SUPPORTED ||
+      cameraState === CameraState.ERROR
     ) {
       return (
         <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-brand-dark">
           <AlertCircle size={56} className="text-brand-accent" />
-          <p className="text-sm font-semibold">{cameraError?.message || 'Camera unavailable'}</p>
+          <p className="text-sm font-semibold">
+            {cameraError?.message || 'Camera unavailable'}
+          </p>
           <button
             type="button"
             onClick={() => {
@@ -486,13 +512,14 @@ export default function LiveCameraView({ compactLayout = false }: LiveCameraView
     return null;
   };
 
-  const detectionStatusLabel = detectionState === DetectionState.RUNNING
-    ? 'Running'
-    : detectionState === DetectionState.READY
-      ? 'Ready'
-      : detectionState === DetectionState.LOADING
-        ? 'Loading'
-        : 'Idle';
+  const detectionStatusLabel =
+    detectionState === DetectionState.RUNNING
+      ? 'Running'
+      : detectionState === DetectionState.READY
+        ? 'Ready'
+        : detectionState === DetectionState.LOADING
+          ? 'Loading'
+          : 'Idle';
 
   return (
     <div className="space-y-3">
@@ -500,7 +527,9 @@ export default function LiveCameraView({ compactLayout = false }: LiveCameraView
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <MonitorPlay size={16} className="text-brand-dark" />
-            <p className="text-sm font-semibold text-brand-dark">{isStreaming ? 'Live Webcam Feed' : 'Camera Preview'}</p>
+            <p className="text-sm font-semibold text-brand-dark">
+              {isStreaming ? 'Live Webcam Feed' : 'Camera Preview'}
+            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -599,7 +628,9 @@ export default function LiveCameraView({ compactLayout = false }: LiveCameraView
       {!compactLayout ? (
         <section className="grid gap-3 lg:grid-cols-2">
           <article className="rounded-xl border border-brand-mid/70 bg-white p-3 shadow-sm">
-            <h4 className="text-sm font-semibold text-brand-dark">Detection Activity</h4>
+            <h4 className="text-sm font-semibold text-brand-dark">
+              Detection Activity
+            </h4>
             <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
               <div className="rounded-lg border border-brand-mid/70 bg-brand-bg px-3 py-2">
                 <p className="text-xs text-brand-dark/70">FPS</p>
@@ -607,7 +638,9 @@ export default function LiveCameraView({ compactLayout = false }: LiveCameraView
               </div>
               <div className="rounded-lg border border-brand-mid/70 bg-brand-bg px-3 py-2">
                 <p className="text-xs text-brand-dark/70">Tracked</p>
-                <p className="font-bold text-brand-dark">{deduplication.stats.activeTracks}</p>
+                <p className="font-bold text-brand-dark">
+                  {deduplication.stats.activeTracks}
+                </p>
               </div>
               <div className="rounded-lg border border-brand-mid/70 bg-brand-bg px-3 py-2">
                 <p className="text-xs text-brand-dark/70">Male</p>
@@ -619,21 +652,29 @@ export default function LiveCameraView({ compactLayout = false }: LiveCameraView
               </div>
               <div className="rounded-lg border border-brand-mid/70 bg-brand-bg px-3 py-2">
                 <p className="text-xs text-brand-dark/70">Unknown</p>
-                <p className="font-bold text-brand-dark">{stats.unknownCount}</p>
+                <p className="font-bold text-brand-dark">
+                  {stats.unknownCount}
+                </p>
               </div>
               <div className="rounded-lg border border-brand-mid/70 bg-brand-bg px-3 py-2">
                 <p className="text-xs text-brand-dark/70">Total Events</p>
-                <p className="font-bold text-brand-dark">{stats.totalDetections}</p>
+                <p className="font-bold text-brand-dark">
+                  {stats.totalDetections}
+                </p>
               </div>
             </div>
           </article>
 
           <article className="rounded-xl border border-brand-mid/70 bg-white p-3 shadow-sm">
-            <h4 className="text-sm font-semibold text-brand-dark">System Status</h4>
+            <h4 className="text-sm font-semibold text-brand-dark">
+              System Status
+            </h4>
             <div className="mt-3 space-y-2 text-sm text-brand-dark">
               <div className="flex items-center justify-between">
                 <span>Camera</span>
-                <span className="font-semibold">{isStreaming ? 'Connected' : 'Disconnected'}</span>
+                <span className="font-semibold">
+                  {isStreaming ? 'Connected' : 'Disconnected'}
+                </span>
               </div>
               <div className="flex items-center justify-between">
                 <span>Person Detection</span>
@@ -641,20 +682,26 @@ export default function LiveCameraView({ compactLayout = false }: LiveCameraView
               </div>
               <div className="flex items-center justify-between">
                 <span>Gender Classification</span>
-                <span className="font-semibold">{isClassificationReady ? 'Ready' : 'Not loaded'}</span>
+                <span className="font-semibold">
+                  {isClassificationReady ? 'Ready' : 'Not loaded'}
+                </span>
               </div>
               <div className="flex items-center justify-between">
                 <span>Deduplication</span>
-                <span className="font-semibold">{deduplication.isInitialized ? 'Active' : 'Not initialized'}</span>
+                <span className="font-semibold">
+                  {deduplication.isInitialized ? 'Active' : 'Not initialized'}
+                </span>
               </div>
               <div className="flex items-center justify-between">
                 <span>Face Embedding</span>
                 <span className="font-semibold">
                   {deduplication.faceEmbeddingState === FaceEmbeddingState.READY
                     ? 'Ready'
-                    : deduplication.faceEmbeddingState === FaceEmbeddingState.LOADING
+                    : deduplication.faceEmbeddingState ===
+                        FaceEmbeddingState.LOADING
                       ? 'Loading'
-                      : deduplication.faceEmbeddingState === FaceEmbeddingState.ERROR
+                      : deduplication.faceEmbeddingState ===
+                          FaceEmbeddingState.ERROR
                         ? 'Error'
                         : 'Not loaded'}
                 </span>
@@ -664,20 +711,25 @@ export default function LiveCameraView({ compactLayout = false }: LiveCameraView
 
           <article className="lg:col-span-2 rounded-xl border border-brand-mid/70 bg-white p-3 shadow-sm">
             <div className="mb-2 flex items-center justify-between">
-              <h4 className="text-sm font-semibold text-brand-dark">Detection Log</h4>
+              <h4 className="text-sm font-semibold text-brand-dark">
+                Detection Log
+              </h4>
               <span className="rounded-md border border-brand-mid/70 bg-brand-bg px-2 py-1 text-[10px] font-semibold text-brand-dark">
                 {detectionLogs.length} entries
               </span>
             </div>
 
-            <ul className="max-h-[220px] space-y-1 overflow-y-auto pr-1 text-xs text-brand-dark/85">
+            <ul className="max-h-55 space-y-1 overflow-y-auto pr-1 text-xs text-brand-dark/85">
               {detectionLogs.length === 0 ? (
                 <li className="rounded-md border border-brand-mid/70 bg-brand-bg px-2 py-2 text-center text-brand-dark/60">
                   No detections yet. Start the camera and enable detection.
                 </li>
               ) : (
                 detectionLogs.map((log, index) => (
-                  <li key={`${log}-${index}`} className="rounded-md border border-brand-mid/70 bg-brand-bg px-2 py-1.5">
+                  <li
+                    key={`${log}-${index}`}
+                    className="rounded-md border border-brand-mid/70 bg-brand-bg px-2 py-1.5"
+                  >
                     {log}
                   </li>
                 ))

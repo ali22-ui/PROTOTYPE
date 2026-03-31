@@ -46,7 +46,7 @@ export default function EnterpriseDetailsModal({
 
   return (
     <div
-      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-1000 flex items-center justify-center bg-black/50 p-4"
       onClick={onClose}
       role="presentation"
     >
@@ -54,7 +54,7 @@ export default function EnterpriseDetailsModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="enterprise-details-modal-title"
-        className="relative z-[1001] w-full max-w-3xl overflow-hidden rounded-2xl border border-brand-mid bg-white shadow-2xl"
+        className="relative z-1001 w-full max-w-3xl overflow-hidden rounded-2xl border border-brand-mid bg-white shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
         <header className="flex items-start justify-between gap-3 bg-brand-dark px-5 py-4 text-brand-cream">
