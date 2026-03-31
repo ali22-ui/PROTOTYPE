@@ -39,6 +39,28 @@ class SupabaseRepository:
         """Return current period in YYYY-MM format."""
         return datetime.now().strftime("%Y-%m")
 
+    @staticmethod
+    def _extract_api_error(error: APIError) -> tuple[str, str]:
+        """Extract best-effort code/message from APIError payload variants."""
+        error_code = ""
+        error_message = str(error)
+
+        raw_payload = error.args[0] if error.args else None
+        if isinstance(raw_payload, dict):
+            maybe_code = raw_payload.get("code")
+            maybe_message = raw_payload.get("message")
+            if isinstance(maybe_code, str):
+                error_code = maybe_code
+            if isinstance(maybe_message, str) and maybe_message:
+                error_message = maybe_message
+        elif isinstance(raw_payload, str) and raw_payload:
+            error_message = raw_payload
+
+        if not error_code and "42501" in f"{error_message} {error}":
+            error_code = "42501"
+
+        return error_code, error_message
+
 
 class ReportingWindowRepository(SupabaseRepository):
     """Repository for reporting window operations."""
@@ -61,10 +83,7 @@ class ReportingWindowRepository(SupabaseRepository):
                 return self._to_dict(result.data[0])
             return None
         except APIError as e:
-            # Handle both dict and string error formats
-            error_dict = e.args[0] if e.args and isinstance(e.args[0], dict) else {}
-            error_code = error_dict.get("code", "")
-            error_msg = error_dict.get("message", str(e))
+            error_code, error_msg = self._extract_api_error(e)
             
             if error_code == "42501":  # Permission denied
                 logger.warning(f"Permission denied for {self.TABLE}: {error_msg}")
@@ -84,10 +103,7 @@ class ReportingWindowRepository(SupabaseRepository):
             result = client.table(self.TABLE).select("*").eq("period", period).execute()
             return [self._to_dict(row) for row in result.data] if result.data else []
         except APIError as e:
-            # Handle both dict and string error formats
-            error_dict = e.args[0] if e.args and isinstance(e.args[0], dict) else {}
-            error_code = error_dict.get("code", "")
-            error_msg = error_dict.get("message", str(e))
+            error_code, error_msg = self._extract_api_error(e)
             
             if error_code == "42501":  # Permission denied
                 logger.warning(f"Permission denied for {self.TABLE}: {error_msg}")

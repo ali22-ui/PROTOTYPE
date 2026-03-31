@@ -194,6 +194,7 @@ class ThreadedFrameGrabber:
     def _capture_loop(self):
         """Background thread that continuously captures frames."""
         while not self._stopped.is_set():
+            loop_start = time.monotonic()
             ret, frame = self._capture.read()
             
             if not ret or frame is None:
@@ -213,6 +214,11 @@ class ThreadedFrameGrabber:
             self._fps_counter.tick()
             self._metrics.capture_fps = self._fps_counter.fps
             self._metrics.frames_captured = self._frames_captured
+
+            elapsed = time.monotonic() - loop_start
+            sleep_for = self._frame_interval - elapsed
+            if sleep_for > 0:
+                time.sleep(sleep_for)
 
     def read(self) -> tuple[bool, np.ndarray | None, float]:
         """
@@ -397,8 +403,8 @@ class RealtimeVideoProcessor:
             if self._inference_callback is not None:
                 try:
                     result = self._inference_callback(frame)
-                except Exception as e:
-                    logger.error(f"Inference error: {e}")
+                except Exception:
+                    logger.exception("Inference callback failed")
                     result = frame
             else:
                 result = frame
@@ -497,8 +503,10 @@ class RealtimeMJPEGStreamer:
         """Generate MJPEG frames for HTTP streaming."""
         cv2 = self._import_cv2()
         fps_counter = FPSCounter()
+        frame_interval = 1.0 / DISPLAY_FPS
         
         while self._grabber and self._grabber.is_running:
+            loop_start = time.monotonic()
             # Get latest processed frame
             frame = self._processor.get_latest_frame() if self._processor else None
             
@@ -525,9 +533,11 @@ class RealtimeMJPEGStreamer:
                 buffer.tobytes() +
                 b'\r\n'
             )
-            
-            # Small sleep to prevent CPU saturation
-            time.sleep(0.01)
+
+            elapsed = time.monotonic() - loop_start
+            sleep_for = frame_interval - elapsed
+            if sleep_for > 0:
+                time.sleep(sleep_for)
 
     @property
     def metrics(self) -> PipelineMetrics | None:

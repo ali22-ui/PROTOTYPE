@@ -10,6 +10,7 @@ Now includes optimized real-time pipeline (PRD_016) with:
 """
 import asyncio
 import logging
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -63,6 +64,8 @@ class IPCameraService:
         self._opencv_available = self._check_opencv()
         self._source_states: dict[str, SourceState] = {}
         self._realtime_streamers: dict[str, "RealtimeMJPEGStreamer"] = {}
+        self._stream_consumers: dict[str, int] = {}
+        self._streamer_lock = threading.Lock()
         self._inference_callback: Callable[[np.ndarray], np.ndarray] | None = None
 
     def _check_opencv(self) -> bool:
@@ -323,34 +326,34 @@ class IPCameraService:
             return
 
         state = self.get_source_state(enterprise_id)
-        
-        # Create or reuse streamer for this enterprise
-        if enterprise_id in self._realtime_streamers:
-            streamer = self._realtime_streamers[enterprise_id]
-            if not streamer.is_running:
-                streamer.stop()
-                del self._realtime_streamers[enterprise_id]
-                streamer = None
-        else:
-            streamer = None
 
-        if streamer is None:
-            streamer = RealtimeMJPEGStreamer(
-                source=url,
-                inference_callback=self._inference_callback,
-                jpeg_quality=80,
-            )
-            try:
-                streamer.start()
-                self._realtime_streamers[enterprise_id] = streamer
-                state.health.status = SourceStatus.ONLINE
-                state.health.reachable = True
-                logger.info(f"Started real-time streamer for enterprise {enterprise_id}")
-            except Exception as e:
-                logger.error(f"Failed to start real-time streamer: {e}")
-                state.health.status = SourceStatus.OFFLINE
-                state.health.last_error = str(e)
-                return
+        with self._streamer_lock:
+            streamer = self._realtime_streamers.get(enterprise_id)
+            if streamer is not None and not streamer.is_running:
+                streamer.stop()
+                self._realtime_streamers.pop(enterprise_id, None)
+                streamer = None
+
+            if streamer is None:
+                streamer = RealtimeMJPEGStreamer(
+                    source=url,
+                    inference_callback=self._inference_callback,
+                    jpeg_quality=80,
+                )
+                try:
+                    streamer.start()
+                    self._realtime_streamers[enterprise_id] = streamer
+                    logger.info(f"Started real-time streamer for enterprise {enterprise_id}")
+                except Exception as e:
+                    logger.error(f"Failed to start real-time streamer: {e}")
+                    state.health.status = SourceStatus.OFFLINE
+                    state.health.last_error = str(e)
+                    return
+
+            self._stream_consumers[enterprise_id] = self._stream_consumers.get(enterprise_id, 0) + 1
+
+        state.health.status = SourceStatus.ONLINE
+        state.health.reachable = True
 
         try:
             for frame_bytes in streamer.stream_frames():
@@ -366,14 +369,27 @@ class IPCameraService:
             state.health.status = SourceStatus.DEGRADED
             state.health.last_error = str(e)
         finally:
-            # Don't stop streamer here - let it run for reconnection
-            pass
+            streamer_to_stop = None
+            with self._streamer_lock:
+                current_consumers = self._stream_consumers.get(enterprise_id, 0) - 1
+                if current_consumers <= 0:
+                    self._stream_consumers.pop(enterprise_id, None)
+                    existing = self._realtime_streamers.get(enterprise_id)
+                    if existing is streamer:
+                        streamer_to_stop = self._realtime_streamers.pop(enterprise_id, None)
+                else:
+                    self._stream_consumers[enterprise_id] = current_consumers
+
+            if streamer_to_stop is not None:
+                streamer_to_stop.stop()
+                logger.info(f"Stopped real-time streamer for enterprise {enterprise_id} after stream close")
 
     def stop_realtime_streamer(self, enterprise_id: str):
         """Stop the real-time streamer for an enterprise."""
         if enterprise_id in self._realtime_streamers:
             self._realtime_streamers[enterprise_id].stop()
             del self._realtime_streamers[enterprise_id]
+            self._stream_consumers.pop(enterprise_id, None)
             logger.info(f"Stopped real-time streamer for enterprise {enterprise_id}")
 
     def set_inference_callback(self, callback: Callable[[np.ndarray], np.ndarray] | None):

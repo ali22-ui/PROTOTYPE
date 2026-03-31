@@ -358,13 +358,15 @@ class FrameSkipInferenceWrapper:
         self._skip_ratio = max(1, skip_ratio)
         self._frame_count = 0
         self._last_result: np.ndarray | None = None
+        self._last_result_reused = False
         self._lock = threading.Lock()
     
     def process_frame(self, frame: np.ndarray) -> np.ndarray:
         """
         Process frame with skip logic.
         
-        Runs inference every skip_ratio frames, reuses last result otherwise.
+        Runs inference every skip_ratio frames and reuses the previous
+        inference output for skipped frames.
         """
         with self._lock:
             self._frame_count += 1
@@ -373,11 +375,22 @@ class FrameSkipInferenceWrapper:
                 # Run inference
                 result = self._callback(frame)
                 self._last_result = result
+                self._last_result_reused = False
                 return result
-            else:
-                # Return original frame (detection boxes from last inference)
-                # In a real scenario, you might overlay cached detections
-                return frame
+
+            self._last_result_reused = True
+            # Return cached inference output for smooth visual continuity.
+            return self._last_result.copy()
+
+    def get_last_metadata(self) -> dict[str, bool]:
+        """Return metadata for the latest processed frame."""
+        return {
+            "reused_inference": self._last_result_reused,
+        }
+
+    @property
+    def last_result_reused(self) -> bool:
+        return self._last_result_reused
     
     @property
     def skip_ratio(self) -> int:

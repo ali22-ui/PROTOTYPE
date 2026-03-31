@@ -1,4 +1,3 @@
-from datetime import datetime
 import logging
 
 from domain_exceptions import DomainNotFoundError, DomainServiceUnavailableError
@@ -26,12 +25,11 @@ def _get_reporting_window_safe(enterprise_id: str):
             window = reporting_window_repo.get_by_enterprise(enterprise_id)
         return window
     except DomainServiceUnavailableError as e:
-        # Permission denied or other database access issues
         logger.warning(f"Could not fetch reporting window for {enterprise_id}: {e}")
-        return None
+        raise
     except Exception as e:
-        logger.error(f"Unexpected error fetching reporting window: {e}")
-        return None
+        logger.exception(f"Unexpected error fetching reporting window for {enterprise_id}")
+        raise DomainServiceUnavailableError("Failed to fetch reporting window") from e
 
 
 def get_enterprise_profile(enterprise_id: str):
@@ -89,13 +87,6 @@ def get_reporting_window_status(enterprise_id: str = "ent_archies_001"):
     window = _get_reporting_window_safe(enterprise_id)
 
     if not window:
-        # Return default closed status instead of raising error
-        # This allows the app to function even if reporting_windows table has permission issues
-        return {
-            "enterprise_id": enterprise_id,
-            "period": datetime.now().strftime("%Y-%m"),
-            "status": "CLOSED",
-            "message": "No reporting window configured"
-        }
+        raise DomainNotFoundError("Enterprise reporting window not found")
 
     return window
