@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     # IP Webcam Configuration - requires explicit user selection, no default auto-start
     camera_source_mode: CameraSourceMode | None = None
     ip_webcam_enabled: bool = True
-    ip_webcam_base_url: str = "http://192.168.1.4:8080"
+    ip_webcam_base_url: str = "http://192.168.1.103:8080"
     ip_webcam_video_path: str = "/video"
     ip_webcam_snapshot_path: str = "/shot.jpg"
     ip_webcam_connect_timeout_seconds: float = 5.0
