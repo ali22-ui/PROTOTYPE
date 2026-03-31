@@ -17,7 +17,10 @@ import {
 import type { EnterpriseOutletContext } from '@/components/layout/EnterpriseShell';
 import ErrorState from '@/components/ui/ErrorState';
 import LoadingState from '@/components/ui/LoadingState';
-import { readEnterpriseInfractions, subscribePortalBridge } from '@/lib/portalBridge';
+import {
+  readEnterpriseInfractions,
+  subscribePortalBridge,
+} from '@/lib/portalBridge';
 import { fetchDashboardLayoutData } from '@/services/api';
 import type { DashboardLayoutData, LguInfractionRecord } from '@/types';
 
@@ -52,7 +55,9 @@ const TOOLTIP_ITEM_STYLE = {
 
 export default function DashboardView(): JSX.Element {
   const { user } = useOutletContext<EnterpriseOutletContext>();
-  const [layoutData, setLayoutData] = useState<DashboardLayoutData | null>(null);
+  const [layoutData, setLayoutData] = useState<DashboardLayoutData | null>(
+    null,
+  );
   const [infractions, setInfractions] = useState<LguInfractionRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -65,7 +70,10 @@ export default function DashboardView(): JSX.Element {
       const response = await fetchDashboardLayoutData(user.enterpriseId);
       setLayoutData(response);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to load dashboard metrics.';
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Unable to load dashboard metrics.';
       setError(message);
     } finally {
       setLoading(false);
@@ -90,11 +98,18 @@ export default function DashboardView(): JSX.Element {
   }
 
   if (error || !layoutData) {
-    return <ErrorState message={error || 'Dashboard unavailable.'} onRetry={() => void loadData()} />;
+    return (
+      <ErrorState
+        message={error || 'Dashboard unavailable.'}
+        onRetry={() => void loadData()}
+      />
+    );
   }
 
   const metrics = layoutData.metrics;
-  const titleAlreadyIncludesPortal = layoutData.title.toLowerCase().includes('tourism analytics portal');
+  const titleAlreadyIncludesPortal = layoutData.title
+    .toLowerCase()
+    .includes('tourism analytics portal');
   const dashboardTitle = titleAlreadyIncludesPortal
     ? layoutData.title
     : `${layoutData.title} - Tourism Analytics Portal`;
@@ -102,15 +117,22 @@ export default function DashboardView(): JSX.Element {
   return (
     <div className="space-y-3">
       <header className="rounded-xl border border-brand-mid/70 bg-brand-bg px-5 py-4 shadow-sm">
-        <h2 className="text-2xl font-bold text-brand-dark md:text-3xl">{dashboardTitle}</h2>
-        <p className="text-sm text-brand-dark/80 md:text-base">{layoutData.timestampLabel}</p>
+        <h2 className="text-2xl font-bold text-brand-dark md:text-3xl">
+          {dashboardTitle}
+        </h2>
+        <p className="text-sm text-brand-dark/80 md:text-base">
+          {layoutData.timestampLabel}
+        </p>
       </header>
 
       {infractions.length ? (
         <section className="rounded-xl border border-brand-accent/40 bg-brand-accent/10 px-4 py-3 shadow-sm">
-          <p className="text-xs font-bold uppercase tracking-wide text-brand-accent">Official Warning Record</p>
+          <p className="text-xs font-bold uppercase tracking-wide text-brand-accent">
+            Official Warning Record
+          </p>
           <p className="mt-1 text-sm font-semibold text-brand-dark">
-            You currently have {infractions.length} LGU compliance warning record(s).
+            You currently have {infractions.length} LGU compliance warning
+            record(s).
           </p>
           <ul className="mt-2 space-y-1 text-xs text-brand-dark/85">
             {infractions.slice(0, 3).map((record) => (
@@ -124,30 +146,48 @@ export default function DashboardView(): JSX.Element {
 
       <section className="grid gap-3 md:grid-cols-3">
         <article className="rounded-xl border border-brand-mid/70 bg-white p-3.5 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wider text-brand-dark/80">Average Visit Count (Month-to-Date)</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-brand-dark/80">
+            Average Visit Count (Month-to-Date)
+          </p>
           <div className="mt-2 flex items-start justify-between gap-2">
-            <p className="text-2xl font-bold text-brand-dark md:text-[1.75rem]">{numberFormatter.format(metrics.averageVisitCountMtd)}</p>
+            <p className="text-2xl font-bold text-brand-dark md:text-[1.75rem]">
+              {numberFormatter.format(metrics.averageVisitCountMtd)}
+            </p>
             <Users className="text-brand-accent" size={18} />
           </div>
-          <p className="mt-1 text-sm font-semibold text-brand-dark">+{metrics.trendPercentage.toFixed(1)}%</p>
+          <p className="mt-1 text-sm font-semibold text-brand-dark">
+            +{metrics.trendPercentage.toFixed(1)}%
+          </p>
         </article>
 
         <article className="rounded-xl border border-brand-mid/70 bg-white p-3.5 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wider text-brand-dark/80">Peak Day</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-brand-dark/80">
+            Peak Day
+          </p>
           <div className="mt-2 flex items-start justify-between gap-2">
-            <p className="text-2xl font-bold text-brand-dark md:text-[1.75rem]">{metrics.peakDayLabel}</p>
+            <p className="text-2xl font-bold text-brand-dark md:text-[1.75rem]">
+              {metrics.peakDayLabel}
+            </p>
             <CalendarDays className="text-brand-accent" size={18} />
           </div>
-          <p className="mt-1 text-sm text-brand-dark/85">{metrics.peakTimeRange}</p>
+          <p className="mt-1 text-sm text-brand-dark/85">
+            {metrics.peakTimeRange}
+          </p>
         </article>
 
         <article className="rounded-xl border border-brand-mid/70 bg-white p-3.5 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wider text-brand-dark/80">Report Submission</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-brand-dark/80">
+            Report Submission
+          </p>
           <div className="mt-2 flex items-start justify-between gap-2">
-            <p className="text-2xl font-bold text-brand-dark md:text-[1.75rem]">{metrics.reportMonthLabel}</p>
+            <p className="text-2xl font-bold text-brand-dark md:text-[1.75rem]">
+              {metrics.reportMonthLabel}
+            </p>
             <Send className="text-brand-accent" size={18} />
           </div>
-          <p className="mt-1 text-sm capitalize text-brand-dark/85">status: {metrics.reportStatus}</p>
+          <p className="mt-1 text-sm capitalize text-brand-dark/85">
+            status: {metrics.reportStatus}
+          </p>
         </article>
       </section>
 
@@ -160,26 +200,73 @@ export default function DashboardView(): JSX.Element {
             <div className="h-55 w-full">
               <ResponsiveContainer>
                 <AreaChart data={layoutData.weeklyDemographicSeries}>
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" stroke={GRID_STROKE} />
-                  <XAxis dataKey="day" tickLine={false} axisLine={false} tick={{ fill: '#5C6F2B', fontSize: 11 }} />
-                  <YAxis tickLine={false} axisLine={false} tick={{ fill: '#5C6F2B', fontSize: 11 }} />
+                  <CartesianGrid
+                    vertical={false}
+                    strokeDasharray="3 3"
+                    stroke={GRID_STROKE}
+                  />
+                  <XAxis
+                    dataKey="day"
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fill: '#5C6F2B', fontSize: 11 }}
+                  />
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fill: '#5C6F2B', fontSize: 11 }}
+                  />
                   <Tooltip
                     contentStyle={TOOLTIP_CONTENT_STYLE}
                     labelStyle={TOOLTIP_LABEL_STYLE}
                     itemStyle={TOOLTIP_ITEM_STYLE}
                   />
                   <Legend wrapperStyle={{ color: '#5C6F2B', fontSize: 11 }} />
-                  <Area type="monotone" dataKey="male" stackId="1" stroke={CHART_COLORS.male} fill={CHART_COLORS.male} fillOpacity={0.22} strokeWidth={2} />
-                  <Area type="monotone" dataKey="female" stackId="1" stroke={CHART_COLORS.female} fill={CHART_COLORS.female} fillOpacity={0.2} strokeWidth={2} />
-                  <Area type="monotone" dataKey="visitors" stackId="1" stroke={CHART_COLORS.visitors} fill={CHART_COLORS.visitors} fillOpacity={0.4} strokeWidth={1.7} />
-                  <Area type="monotone" dataKey="tourist" stackId="1" stroke={CHART_COLORS.tourist} fill={CHART_COLORS.tourist} fillOpacity={0.1} strokeWidth={1.4} />
+                  <Area
+                    type="monotone"
+                    dataKey="male"
+                    stackId="1"
+                    stroke={CHART_COLORS.male}
+                    fill={CHART_COLORS.male}
+                    fillOpacity={0.22}
+                    strokeWidth={2}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="female"
+                    stackId="1"
+                    stroke={CHART_COLORS.female}
+                    fill={CHART_COLORS.female}
+                    fillOpacity={0.2}
+                    strokeWidth={2}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="visitors"
+                    stackId="1"
+                    stroke={CHART_COLORS.visitors}
+                    fill={CHART_COLORS.visitors}
+                    fillOpacity={0.4}
+                    strokeWidth={1.7}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="tourist"
+                    stackId="1"
+                    stroke={CHART_COLORS.tourist}
+                    fill={CHART_COLORS.tourist}
+                    fillOpacity={0.1}
+                    strokeWidth={1.4}
+                  />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
           </article>
 
           <article className="rounded-xl border border-brand-mid/70 bg-white p-3 shadow-sm">
-            <h3 className="mb-2 text-sm font-semibold text-brand-dark">Residence Mix Distribution</h3>
+            <h3 className="mb-2 text-sm font-semibold text-brand-dark">
+              Residence Mix Distribution
+            </h3>
             <div className="h-49.5 w-full">
               <ResponsiveContainer>
                 <PieChart margin={RESIDENCE_PIE_MARGIN}>
@@ -205,8 +292,14 @@ export default function DashboardView(): JSX.Element {
                   <Legend
                     verticalAlign="bottom"
                     align="center"
-                    wrapperStyle={{ bottom: 10, fontSize: 11, color: '#5C6F2B' }}
-                    formatter={(value, _entry, index) => `${value}: ${layoutData.residenceMixDistribution[index]?.percentage ?? 0}%`}
+                    wrapperStyle={{
+                      bottom: 10,
+                      fontSize: 11,
+                      color: '#5C6F2B',
+                    }}
+                    formatter={(value, _entry, index) =>
+                      `${value}: ${layoutData.residenceMixDistribution[index]?.percentage ?? 0}%`
+                    }
                   />
                   <Tooltip
                     contentStyle={TOOLTIP_CONTENT_STYLE}
@@ -220,11 +313,17 @@ export default function DashboardView(): JSX.Element {
         </div>
 
         <article className="rounded-xl border border-brand-mid/70 bg-white p-3 shadow-sm">
-          <h3 className="mb-2 text-sm font-semibold text-brand-dark">Hourly Demographic Volume (1:00 - 23:00)</h3>
+          <h3 className="mb-2 text-sm font-semibold text-brand-dark">
+            Hourly Demographic Volume (1:00 - 23:00)
+          </h3>
           <div className="h-90 w-full md:h-97.5">
             <ResponsiveContainer>
               <AreaChart data={layoutData.hourlyDemographicSeries}>
-                <CartesianGrid vertical={false} strokeDasharray="3 3" stroke={GRID_STROKE} />
+                <CartesianGrid
+                  vertical={false}
+                  strokeDasharray="3 3"
+                  stroke={GRID_STROKE}
+                />
                 <XAxis
                   dataKey="hourLabel"
                   angle={-35}
@@ -234,17 +333,49 @@ export default function DashboardView(): JSX.Element {
                   axisLine={false}
                   tick={{ fill: '#5C6F2B', fontSize: 11 }}
                 />
-                <YAxis tickLine={false} axisLine={false} tick={{ fill: '#5C6F2B', fontSize: 11 }} />
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  tick={{ fill: '#5C6F2B', fontSize: 11 }}
+                />
                 <Tooltip
                   contentStyle={TOOLTIP_CONTENT_STYLE}
                   labelStyle={TOOLTIP_LABEL_STYLE}
                   itemStyle={TOOLTIP_ITEM_STYLE}
                 />
                 <Legend wrapperStyle={{ color: '#5C6F2B', fontSize: 11 }} />
-                <Area type="monotone" dataKey="male" stroke={CHART_COLORS.male} fill={CHART_COLORS.male} fillOpacity={0.24} strokeWidth={2} />
-                <Area type="monotone" dataKey="female" stroke={CHART_COLORS.female} fill={CHART_COLORS.female} fillOpacity={0.2} strokeWidth={2} />
-                <Area type="monotone" dataKey="visitor" stroke={CHART_COLORS.visitors} fill={CHART_COLORS.visitors} fillOpacity={0.45} strokeWidth={1.7} />
-                <Area type="monotone" dataKey="tourist" stroke={CHART_COLORS.tourist} fill={CHART_COLORS.tourist} fillOpacity={0.1} strokeWidth={1.5} />
+                <Area
+                  type="monotone"
+                  dataKey="male"
+                  stroke={CHART_COLORS.male}
+                  fill={CHART_COLORS.male}
+                  fillOpacity={0.24}
+                  strokeWidth={2}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="female"
+                  stroke={CHART_COLORS.female}
+                  fill={CHART_COLORS.female}
+                  fillOpacity={0.2}
+                  strokeWidth={2}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="visitor"
+                  stroke={CHART_COLORS.visitors}
+                  fill={CHART_COLORS.visitors}
+                  fillOpacity={0.45}
+                  strokeWidth={1.7}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="tourist"
+                  stroke={CHART_COLORS.tourist}
+                  fill={CHART_COLORS.tourist}
+                  fillOpacity={0.1}
+                  strokeWidth={1.5}
+                />
               </AreaChart>
             </ResponsiveContainer>
           </div>

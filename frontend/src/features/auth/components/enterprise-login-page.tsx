@@ -48,15 +48,16 @@ export default function EnterpriseLoginPage({
               Enterprise Tourism Portal
             </h1>
             <p className="mt-3 text-sm text-slate-200">
-              Sign in with your business permit account to access Dashboard, Camera
-              Monitoring, Camera Logs, Report Center, and Archived Reports.
+              Sign in with your business permit account to access Dashboard,
+              Camera Monitoring, Camera Logs, Report Center, and Archived
+              Reports.
             </p>
           </div>
 
           <div className="rounded-2xl border border-slate-700 bg-slate-800/70 p-4 text-xs text-slate-300">
             Tip: Use an existing enterprise ID (example:{' '}
-            <span className="font-semibold">ent_archies_001</span>) as your Business
-            Permit value.
+            <span className="font-semibold">ent_archies_001</span>) as your
+            Business Permit value.
           </div>
         </section>
 
@@ -67,7 +68,10 @@ export default function EnterpriseLoginPage({
           </p>
           <p className="mt-2 text-xs text-slate-500">
             LGU Admin?{' '}
-            <Link to="/login" className="font-semibold text-primary-700 hover:underline">
+            <Link
+              to="/login"
+              className="font-semibold text-primary-700 hover:underline"
+            >
               Go to LGU Login
             </Link>
           </p>
@@ -88,7 +92,9 @@ export default function EnterpriseLoginPage({
             </label>
 
             <label className="block">
-              <span className="text-sm font-semibold text-slate-700">Password</span>
+              <span className="text-sm font-semibold text-slate-700">
+                Password
+              </span>
               <div className="relative mt-2">
                 <input
                   type="password"

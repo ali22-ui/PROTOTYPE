@@ -73,10 +73,11 @@ export default function LguComplianceModal({
 }: LguComplianceModalProps): JSX.Element | null {
   const [forms, setForms] = useState<LguComplianceFormRecord[]>([]);
   const [aggregate, setAggregate] = useState<MonthlyAggregateData | null>(null);
-  const [notificationStatus, setNotificationStatus] = useState<LguNotificationStatus>({
-    hasLguRequestedReports: false,
-    message: 'Checking LGU notification status...',
-  });
+  const [notificationStatus, setNotificationStatus] =
+    useState<LguNotificationStatus>({
+      hasLguRequestedReports: false,
+      message: 'Checking LGU notification status...',
+    });
   const [isLguReady, setIsLguReady] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -115,10 +116,11 @@ export default function LguComplianceModal({
     clearPreviewCache();
 
     try {
-      const [{ forms: loadedForms, aggregate: aggregateData }, lguStatus] = await Promise.all([
-        fetchComplianceForms(enterpriseId, month),
-        apiService.checkLguNotificationStatus(enterpriseId, month),
-      ]);
+      const [{ forms: loadedForms, aggregate: aggregateData }, lguStatus] =
+        await Promise.all([
+          fetchComplianceForms(enterpriseId, month),
+          apiService.checkLguNotificationStatus(enterpriseId, month),
+        ]);
 
       setForms(loadedForms);
       setAggregate(aggregateData);
@@ -127,7 +129,10 @@ export default function LguComplianceModal({
       setNotificationStatus(lguStatus);
       setIsLguReady(lguStatus.hasLguRequestedReports === true);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to load LGU compliance forms.';
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Unable to load LGU compliance forms.';
       setError(message);
       setIsLguReady(false);
     } finally {
@@ -158,51 +163,53 @@ export default function LguComplianceModal({
     [enterpriseId, month],
   );
 
-  const resolveTemplateBytes = useCallback(async (formType: LguComplianceFormType): Promise<ArrayBuffer> => {
-    const templateFile = getTemplateFileByFormType(formType);
-    const cached = templateCacheRef.current[templateFile];
+  const resolveTemplateBytes = useCallback(
+    async (formType: LguComplianceFormType): Promise<ArrayBuffer> => {
+      const templateFile = getTemplateFileByFormType(formType);
+      const cached = templateCacheRef.current[templateFile];
 
-    if (cached) {
-      return cached;
-    }
-
-    const bytes = await loadTemplate(templateFile);
-    templateCacheRef.current[templateFile] = bytes;
-    return bytes;
-  }, []);
-
-  const renderFormPdf = useCallback(async (form: LguComplianceFormRecord): Promise<Blob> => {
-    const templateBytes = await resolveTemplateBytes(form.type);
-    const coordinateMap = getCoordinateMapByFormType(form.type);
-
-    const result = await fillPDF(
-      templateBytes,
-      form.data,
-      coordinateMap,
-    );
-
-    setPreviewUrls((previous) => {
-      const priorUrl = previous[form.id];
-      if (priorUrl && priorUrl !== result.blobUrl) {
-        revokePdfUrl(priorUrl);
+      if (cached) {
+        return cached;
       }
 
-      const next = {
+      const bytes = await loadTemplate(templateFile);
+      templateCacheRef.current[templateFile] = bytes;
+      return bytes;
+    },
+    [],
+  );
+
+  const renderFormPdf = useCallback(
+    async (form: LguComplianceFormRecord): Promise<Blob> => {
+      const templateBytes = await resolveTemplateBytes(form.type);
+      const coordinateMap = getCoordinateMapByFormType(form.type);
+
+      const result = await fillPDF(templateBytes, form.data, coordinateMap);
+
+      setPreviewUrls((previous) => {
+        const priorUrl = previous[form.id];
+        if (priorUrl && priorUrl !== result.blobUrl) {
+          revokePdfUrl(priorUrl);
+        }
+
+        const next = {
+          ...previous,
+          [form.id]: result.blobUrl,
+        };
+
+        previewUrlRef.current = next;
+        return next;
+      });
+
+      setPreviewBlobs((previous) => ({
         ...previous,
-        [form.id]: result.blobUrl,
-      };
+        [form.id]: result.blob,
+      }));
 
-      previewUrlRef.current = next;
-      return next;
-    });
-
-    setPreviewBlobs((previous) => ({
-      ...previous,
-      [form.id]: result.blob,
-    }));
-
-    return result.blob;
-  }, [resolveTemplateBytes]);
+      return result.blob;
+    },
+    [resolveTemplateBytes],
+  );
 
   useEffect(() => {
     if (!isOpen || !activeForm) {
@@ -215,13 +222,18 @@ export default function LguComplianceModal({
       void renderFormPdf(activeForm)
         .catch((err) => {
           if (!cancelled) {
-            const message = err instanceof Error ? err.message : 'Failed to render PDF preview.';
+            const message =
+              err instanceof Error
+                ? err.message
+                : 'Failed to render PDF preview.';
             setError(message);
           }
         })
         .finally(() => {
           if (!cancelled) {
-            setRenderingId((current) => (current === activeForm.id ? null : current));
+            setRenderingId((current) =>
+              current === activeForm.id ? null : current,
+            );
           }
         });
     }, 280);
@@ -232,57 +244,73 @@ export default function LguComplianceModal({
     };
   }, [activeForm, isOpen, renderFormPdf]);
 
-  const handleDownload = useCallback(async (form: LguComplianceFormRecord): Promise<void> => {
-    const existingBlob = previewBlobs[form.id];
-    const blob = existingBlob ?? await renderFormPdf(form);
-    triggerPdfDownload(blob, `${form.type}-${form.month}.pdf`);
-  }, [previewBlobs, renderFormPdf]);
-
-  const handleSubmit = useCallback(async (form: LguComplianceFormRecord): Promise<void> => {
-    if (!isLguReady) {
-      return;
-    }
-
-    setSubmittingId(form.id);
-    setError(null);
-
-    try {
+  const handleDownload = useCallback(
+    async (form: LguComplianceFormRecord): Promise<void> => {
       const existingBlob = previewBlobs[form.id];
-      const blob = existingBlob ?? await renderFormPdf(form);
-      const result = await submitMonthlyReportForm(enterpriseId, month, form, blob);
+      const blob = existingBlob ?? (await renderFormPdf(form));
+      triggerPdfDownload(blob, `${form.type}-${form.month}.pdf`);
+    },
+    [previewBlobs, renderFormPdf],
+  );
 
-      setForms((previous) => {
-        const submittedStatus: LguComplianceFormRecord['status'] = 'SUBMITTED';
-        const updated: LguComplianceFormRecord[] = previous.map((row) => {
-          if (row.id !== form.id) {
-            return row;
-          }
+  const handleSubmit = useCallback(
+    async (form: LguComplianceFormRecord): Promise<void> => {
+      if (!isLguReady) {
+        return;
+      }
 
-          return {
-            ...row,
-            status: submittedStatus,
-            submittedAt: result.submittedAt,
-            lastUpdated: result.submittedAt,
-          };
+      setSubmittingId(form.id);
+      setError(null);
+
+      try {
+        const existingBlob = previewBlobs[form.id];
+        const blob = existingBlob ?? (await renderFormPdf(form));
+        const result = await submitMonthlyReportForm(
+          enterpriseId,
+          month,
+          form,
+          blob,
+        );
+
+        setForms((previous) => {
+          const submittedStatus: LguComplianceFormRecord['status'] =
+            'SUBMITTED';
+          const updated: LguComplianceFormRecord[] = previous.map((row) => {
+            if (row.id !== form.id) {
+              return row;
+            }
+
+            return {
+              ...row,
+              status: submittedStatus,
+              submittedAt: result.submittedAt,
+              lastUpdated: result.submittedAt,
+            };
+          });
+
+          persistComplianceForms(enterpriseId, month, updated);
+          return updated;
         });
-
-        persistComplianceForms(enterpriseId, month, updated);
-        return updated;
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to submit LGU report.';
-      setError(message);
-    } finally {
-      setSubmittingId(null);
-    }
-  }, [enterpriseId, isLguReady, month, previewBlobs, renderFormPdf]);
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : 'Unable to submit LGU report.';
+        setError(message);
+      } finally {
+        setSubmittingId(null);
+      }
+    },
+    [enterpriseId, isLguReady, month, previewBlobs, renderFormPdf],
+  );
 
   const lockLabel = useMemo(() => {
     if (isLguReady) {
       return 'LGU request received. Submission is enabled.';
     }
 
-    return notificationStatus.message || 'Submission is locked until LGU requests reports.';
+    return (
+      notificationStatus.message ||
+      'Submission is locked until LGU requests reports.'
+    );
   }, [isLguReady, notificationStatus.message]);
 
   const renderEditor = (form: LguComplianceFormRecord): JSX.Element => {
@@ -326,11 +354,15 @@ export default function LguComplianceModal({
         return (
           <VisitorRecordFormEditor
             data={form.data}
-            onChange={(next) => handleFormDataChange('visitor-record-attractions', next)}
+            onChange={(next) =>
+              handleFormDataChange('visitor-record-attractions', next)
+            }
           />
         );
       default:
-        return <div className="text-sm text-rose-700">Unsupported form type.</div>;
+        return (
+          <div className="text-sm text-rose-700">Unsupported form type.</div>
+        );
     }
   };
 
@@ -341,13 +373,21 @@ export default function LguComplianceModal({
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/70 p-4">
       <div className="flex h-[95vh] w-full max-w-384 flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <header className="flex items-start justify-between gap-3 border-b px-5 py-4" style={{ backgroundColor: BRAND_DARK }}>
+        <header
+          className="flex items-start justify-between gap-3 border-b px-5 py-4"
+          style={{ backgroundColor: BRAND_DARK }}
+        >
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-brand-cream">LGU Compliance Modal</p>
-            <h3 className="text-xl font-bold text-white">View Monthly Reports - {month}</h3>
+            <p className="text-xs font-semibold uppercase tracking-wider text-brand-cream">
+              LGU Compliance Modal
+            </p>
+            <h3 className="text-xl font-bold text-white">
+              View Monthly Reports - {month}
+            </h3>
             {aggregate ? (
               <p className="mt-1 text-xs text-brand-cream">
-                Auto-filled from records: {aggregate.totalVisitors} total visitors, peak date {aggregate.peakDate}.
+                Auto-filled from records: {aggregate.totalVisitors} total
+                visitors, peak date {aggregate.peakDate}.
               </p>
             ) : null}
           </div>
@@ -362,22 +402,35 @@ export default function LguComplianceModal({
           </button>
         </header>
 
-        <div className="border-b px-5 py-2 text-xs" style={{ backgroundColor: BRAND_CREAM }}>
+        <div
+          className="border-b px-5 py-2 text-xs"
+          style={{ backgroundColor: BRAND_CREAM }}
+        >
           <div className="flex items-center gap-2 text-slate-800">
             {isLguReady ? (
               <Unlock size={14} className="text-emerald-700" />
             ) : (
               <Lock size={14} className="text-slate-600" />
             )}
-            <span className={isLguReady ? 'text-emerald-800' : 'text-slate-700'}>
+            <span
+              className={isLguReady ? 'text-emerald-800' : 'text-slate-700'}
+            >
               {lockLabel}
             </span>
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
-          {loading ? <p className="text-sm text-slate-600">Loading official PDF forms...</p> : null}
-          {error ? <p className="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
+          {loading ? (
+            <p className="text-sm text-slate-600">
+              Loading official PDF forms...
+            </p>
+          ) : null}
+          {error ? (
+            <p className="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
+              {error}
+            </p>
+          ) : null}
 
           <div className="space-y-3">
             {forms.map((form) => {
@@ -388,18 +441,36 @@ export default function LguComplianceModal({
               const previewUrl = previewUrls[form.id];
 
               return (
-                <article key={form.id} className="overflow-hidden rounded-2xl border border-slate-300">
+                <article
+                  key={form.id}
+                  className="overflow-hidden rounded-2xl border border-slate-300"
+                >
                   <button
                     type="button"
-                    onClick={() => setActiveId((previous) => (previous === form.id ? null : form.id))}
+                    onClick={() =>
+                      setActiveId((previous) =>
+                        previous === form.id ? null : form.id,
+                      )
+                    }
                     className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
-                    style={{ backgroundColor: isActive ? '#EAF4E5' : '#FFFFFF' }}
+                    style={{
+                      backgroundColor: isActive ? '#EAF4E5' : '#FFFFFF',
+                    }}
                   >
                     <div>
-                      <p className="text-sm font-semibold" style={{ color: BRAND_DARK }}>{form.title}</p>
-                      <p className="text-xs text-slate-600">{form.description}</p>
+                      <p
+                        className="text-sm font-semibold"
+                        style={{ color: BRAND_DARK }}
+                      >
+                        {form.title}
+                      </p>
+                      <p className="text-xs text-slate-600">
+                        {form.description}
+                      </p>
                     </div>
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusClass(form.status)}`}>
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusClass(form.status)}`}
+                    >
                       {form.status}
                     </span>
                   </button>
@@ -445,9 +516,9 @@ export default function LguComplianceModal({
                               : 'Submission is locked until LGU requests reports.'
                           }
                           disabled={
-                            isSubmitting
-                            || form.status === 'SUBMITTED'
-                            || !isLguReady
+                            isSubmitting ||
+                            form.status === 'SUBMITTED' ||
+                            !isLguReady
                           }
                           className={[
                             'inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-white',
@@ -456,7 +527,11 @@ export default function LguComplianceModal({
                               : 'bg-gray-400 cursor-not-allowed',
                           ].join(' ')}
                         >
-                          {form.status === 'SUBMITTED' ? <CheckCircle2 size={14} /> : <Send size={14} />}
+                          {form.status === 'SUBMITTED' ? (
+                            <CheckCircle2 size={14} />
+                          ) : (
+                            <Send size={14} />
+                          )}
                           {form.status === 'SUBMITTED'
                             ? 'Submitted'
                             : isSubmitting
@@ -497,8 +572,15 @@ export default function LguComplianceModal({
                             </div>
                           ) : (
                             <div className="grid h-full min-h-60 place-items-center rounded-lg bg-slate-50 p-4 text-center text-sm text-slate-500">
-                              Click <span className="mx-1 font-semibold" style={{ color: BRAND_DARK }}>Edit</span>
-                              to open the field editor. PDF preview updates automatically as you type.
+                              Click{' '}
+                              <span
+                                className="mx-1 font-semibold"
+                                style={{ color: BRAND_DARK }}
+                              >
+                                Edit
+                              </span>
+                              to open the field editor. PDF preview updates
+                              automatically as you type.
                             </div>
                           )}
                         </aside>
