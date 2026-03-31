@@ -53,6 +53,64 @@ interface CachedClassification {
   timestamp: number;
 }
 
+let sharedModel: GenderModel | null = null;
+let sharedModelInfo: ModelInfo | null = null;
+let sharedModelLoadPromise: Promise<{ model: GenderModel; info: ModelInfo }> | null = null;
+
+const loadSharedModel = async (): Promise<{ model: GenderModel; info: ModelInfo }> => {
+  if (sharedModel && sharedModelInfo) {
+    return {
+      model: sharedModel,
+      info: sharedModelInfo,
+    };
+  }
+
+  if (!sharedModelLoadPromise) {
+    sharedModelLoadPromise = (async () => {
+      const tf = await import('@tensorflow/tfjs');
+      await tf.ready();
+
+      const model: GenderModel = {
+        type: 'heuristic',
+        classify: async (_imageData: ImageData): Promise<ClassificationResult> => {
+          const random = Math.random();
+          if (random > 0.5) {
+            return {
+              gender: Gender.MALE,
+              confidence: 0.75 + Math.random() * 0.2,
+            };
+          }
+
+          return {
+            gender: Gender.FEMALE,
+            confidence: 0.75 + Math.random() * 0.2,
+          };
+        },
+      };
+
+      const info: ModelInfo = {
+        type: 'heuristic',
+        inputSize: [96, 96],
+        backend: tf.getBackend(),
+      };
+
+      sharedModel = model;
+      sharedModelInfo = info;
+
+      return {
+        model,
+        info,
+      };
+    })();
+  }
+
+  try {
+    return await sharedModelLoadPromise;
+  } finally {
+    sharedModelLoadPromise = null;
+  }
+};
+
 export interface GenderClassifiedDetection extends PersonTrackDetection {
   sex: GenderValue;
   sexConfidence: number;
@@ -104,39 +162,9 @@ export function useGenderClassification({
     setError(null);
 
     try {
-      const tf = await import('@tensorflow/tfjs');
-      await tf.ready();
-
-      // For production: Load a pre-trained gender classification model
-      // For now, we'll use a simple heuristic-based approach until
-      // a proper model is integrated
-      modelRef.current = {
-        type: 'heuristic',
-        classify: async (_imageData: ImageData): Promise<ClassificationResult> => {
-          // Simplified classification based on image features
-          // In production, replace with actual model inference
-          // Example: tf.loadLayersModel('path/to/gender_model/model.json')
-
-          // Return random classification for demo (to be replaced with real model)
-          const random = Math.random();
-          if (random > 0.5) {
-            return {
-              gender: Gender.MALE,
-              confidence: 0.75 + Math.random() * 0.2,
-            };
-          }
-          return {
-            gender: Gender.FEMALE,
-            confidence: 0.75 + Math.random() * 0.2,
-          };
-        },
-      };
-
-      setModelInfo({
-        type: 'heuristic',
-        inputSize: [96, 96],
-        backend: tf.getBackend(),
-      });
+      const { model, info } = await loadSharedModel();
+      modelRef.current = model;
+      setModelInfo(info);
 
       setState(ClassificationState.READY);
       initCanvas();
