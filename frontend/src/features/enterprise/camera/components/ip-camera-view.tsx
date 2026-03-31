@@ -21,6 +21,7 @@ import {
   Gender,
   useDeduplication,
 } from '../hooks';
+import { FaceEmbeddingState } from '../hooks/use-face-embedding';
 import { sendDetectionBatch } from '../api/detection-api';
 import {
   fetchCameraSource,
@@ -32,6 +33,7 @@ import type { CameraSourceState, DetectionBatchEvent } from '../types';
 const BATCH_INTERVAL_MS = 5000;
 const MAX_BATCH_SIZE = 50;
 const HEALTH_CHECK_INTERVAL_MS = 10000;
+const FRAME_STALL_TIMEOUT_MS = 3000;
 
 const SourceStatus = {
   ONLINE: 'online',
@@ -47,6 +49,9 @@ export default function IPCameraView({ compactLayout = false }: IPCameraViewProp
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
+  const processingCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const processingStreamRef = useRef<MediaStream | null>(null);
+  const lastFrameAtRef = useRef(0);
   const batchBufferRef = useRef<DetectionBatchEvent[]>([]);
   const lastBatchTimeRef = useRef(Date.now());
 
@@ -54,6 +59,7 @@ export default function IPCameraView({ compactLayout = false }: IPCameraViewProp
   const [isLoading, setIsLoading] = useState(true);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
+  const [frameState, setFrameState] = useState<'idle' | 'receiving' | 'stalled' | 'blocked'>('idle');
   const [showDeduplicationStats] = useState(true);
   const [detectionLogs, setDetectionLogs] = useState<string[]>([]);
   const [, setIsDetectionActive] = useState(false);
@@ -143,6 +149,7 @@ export default function IPCameraView({ compactLayout = false }: IPCameraViewProp
   const startIPStream = useCallback(async (): Promise<void> => {
     setIsLoading(true);
     setStreamError(null);
+    setFrameState('stalled');
 
     // Switch to ip_webcam mode if not already
     let state = sourceState;
@@ -172,6 +179,18 @@ export default function IPCameraView({ compactLayout = false }: IPCameraViewProp
 
   const stopIPStream = useCallback((): void => {
     setIsStreaming(false);
+    setFrameState('idle');
+    lastFrameAtRef.current = 0;
+
+    if (processingStreamRef.current) {
+      processingStreamRef.current.getTracks().forEach((track) => track.stop());
+      processingStreamRef.current = null;
+    }
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+
     if (isDetecting) {
       stopDetection();
     }
@@ -211,13 +230,28 @@ export default function IPCameraView({ compactLayout = false }: IPCameraViewProp
     return () => clearInterval(interval);
   }, [isStreaming, fetchSourceState]);
 
-  // Copy MJPEG frame to hidden video for detection
+  // Copy MJPEG frames into a canvas-captured stream so detection hooks can read real video frames.
   useEffect(() => {
     if (!isStreaming || !imgRef.current || !videoRef.current) return;
 
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
+    const processingCanvas = document.createElement('canvas');
+    const ctx = processingCanvas.getContext('2d');
     if (!ctx) return;
+
+    processingCanvasRef.current = processingCanvas;
+    const frameStream = processingCanvas.captureStream(15);
+    processingStreamRef.current = frameStream;
+
+    if (videoRef.current.srcObject !== frameStream) {
+      videoRef.current.srcObject = frameStream;
+    }
+
+    void videoRef.current.play().catch(() => {
+      setFrameState('blocked');
+      setStreamError('Unable to initialize processing stream');
+    });
+
+    let animationFrameId = 0;
 
     const copyFrame = (): void => {
       if (!isStreaming) return;
@@ -225,19 +259,51 @@ export default function IPCameraView({ compactLayout = false }: IPCameraViewProp
       const img = imgRef.current;
 
       if (img && img.complete && img.naturalWidth > 0) {
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
+        processingCanvas.width = img.naturalWidth;
+        processingCanvas.height = img.naturalHeight;
         ctx.drawImage(img, 0, 0);
 
-        // Create data URL and set as video poster for detection
-        // Note: For real detection, we'd need a different approach
-        // This is a simplified version
+        lastFrameAtRef.current = Date.now();
+        setFrameState((prev) => (prev === 'receiving' ? prev : 'receiving'));
       }
 
-      requestAnimationFrame(copyFrame);
+      animationFrameId = requestAnimationFrame(copyFrame);
     };
 
-    requestAnimationFrame(copyFrame);
+    animationFrameId = requestAnimationFrame(copyFrame);
+
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+
+      if (videoRef.current?.srcObject === frameStream) {
+        videoRef.current.srcObject = null;
+      }
+
+      frameStream.getTracks().forEach((track) => track.stop());
+      processingStreamRef.current = null;
+    };
+  }, [isStreaming]);
+
+  useEffect(() => {
+    if (!isStreaming) {
+      setFrameState('idle');
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      if (lastFrameAtRef.current === 0) {
+        setFrameState((prev) => (prev === 'blocked' ? prev : 'stalled'));
+        return;
+      }
+
+      if (Date.now() - lastFrameAtRef.current > FRAME_STALL_TIMEOUT_MS) {
+        setFrameState((prev) => (prev === 'blocked' ? prev : 'stalled'));
+      }
+    }, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
   }, [isStreaming]);
 
   // Process detections (similar to live-camera-view)
@@ -435,6 +501,53 @@ export default function IPCameraView({ compactLayout = false }: IPCameraViewProp
 
   const relayUrl = getCameraRelayUrl();
 
+  const transportStatusLabel =
+    sourceState?.health?.status === SourceStatus.ONLINE
+      ? 'Connected'
+      : sourceState?.health?.status === SourceStatus.DEGRADED
+        ? 'Degraded'
+        : sourceState?.health?.status === SourceStatus.OFFLINE
+          ? 'Offline'
+          : 'Connecting';
+
+  const frameStatusLabel =
+    frameState === 'receiving'
+      ? 'Receiving'
+      : frameState === 'stalled'
+        ? 'Stalled'
+        : frameState === 'blocked'
+          ? 'Blocked'
+          : 'Idle';
+
+  const aiStatusLabel =
+    deduplication.faceEmbeddingState === FaceEmbeddingState.ERROR
+      ? 'Error'
+      : deduplication.faceEmbeddingState === FaceEmbeddingState.LOADING
+        ? 'Loading'
+        : isClassificationReady && deduplication.isInitialized
+          ? 'Ready'
+          : 'Idle';
+
+  const overallStatusLabel =
+    frameState === 'receiving'
+      ? 'Connected'
+      : frameState === 'blocked'
+        ? 'Blocked'
+        : transportStatusLabel === 'Connected' || transportStatusLabel === 'Degraded'
+          ? 'Degraded'
+          : 'Offline';
+
+  const handleImageLoad = (): void => {
+    setStreamError(null);
+    lastFrameAtRef.current = Date.now();
+    setFrameState((prev) => (prev === 'receiving' ? prev : 'receiving'));
+  };
+
+  const handleImageError = (): void => {
+    setFrameState('blocked');
+    setStreamError('Stream blocked or unavailable');
+  };
+
   return (
     <div className="space-y-4">
       {/* Header with controls */}
@@ -445,6 +558,13 @@ export default function IPCameraView({ compactLayout = false }: IPCameraViewProp
             <span className="font-medium text-slate-700">Mobile IP Camera</span>
           </div>
           {renderHealthStatus()}
+        </div>
+
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+          <p><span className="font-semibold">Overall:</span> {overallStatusLabel}</p>
+          <p><span className="font-semibold">Transport:</span> {transportStatusLabel}</p>
+          <p><span className="font-semibold">Frame:</span> {frameStatusLabel}</p>
+          <p><span className="font-semibold">AI:</span> {aiStatusLabel}</p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -499,8 +619,8 @@ export default function IPCameraView({ compactLayout = false }: IPCameraViewProp
               src={relayUrl}
               alt="IP Camera Stream"
               className="h-full w-full object-contain"
-              onError={() => setStreamError('Stream connection failed')}
-              onLoad={() => setStreamError(null)}
+              onError={handleImageError}
+              onLoad={handleImageLoad}
             />
 
             {/* Hidden video element for detection (if needed) */}

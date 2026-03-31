@@ -4,6 +4,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { BBoxPercent } from '../types';
+import { FACE_API_MODEL_BASE_URL } from '../constants/model-assets';
 
 /**
  * Face embedding state enum.
@@ -29,11 +30,26 @@ const DEFAULT_CONFIG = {
   extractionCooldownMs: 200, // Minimum time between extractions for same track
 };
 
+const MODEL_RETRY_COOLDOWN_MS = 10000;
+
 /**
- * CDN URLs for face-api.js models.
+ * Local URLs for face-api.js models.
  */
 const MODEL_URLS = {
-  base: 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model',
+  base: FACE_API_MODEL_BASE_URL,
+};
+
+const toFaceModelLoadError = (err: unknown): Error => {
+  const fallback = err instanceof Error ? err : new Error('Failed to load face model');
+  const rawMessage = fallback.message || '';
+
+  if (/WebAssembly\.instantiate|Content Security policy directive|unsafe-eval/i.test(rawMessage)) {
+    return new Error(
+      'Face model runtime blocked by Content Security Policy. Allow wasm runtime in script-src (wasm-unsafe-eval, and unsafe-eval for compatibility).',
+    );
+  }
+
+  return fallback;
 };
 
 export interface UseFaceEmbeddingOptions {
@@ -107,6 +123,8 @@ export function useFaceEmbedding(options: UseFaceEmbeddingOptions = {}) {
   const faceapiRef = useRef<FaceApiModule | null>(null);
   const embeddingCacheRef = useRef<Map<string, CachedFaceData>>(new Map()); // trackId -> { embedding, timestamp, confidence }
   const extractionTimesRef = useRef<Map<string, number>>(new Map()); // trackId -> lastExtractionTime
+  const modelLoadPromiseRef = useRef<Promise<boolean> | null>(null);
+  const lastModelFailureAtRef = useRef(0);
 
   const [state, setState] = useState<FaceEmbeddingStateValue>(FaceEmbeddingState.IDLE);
   const [error, setError] = useState<Error | null>(null);
@@ -121,37 +139,62 @@ export function useFaceEmbedding(options: UseFaceEmbeddingOptions = {}) {
       return true;
     }
 
+    if (modelLoadPromiseRef.current) {
+      return modelLoadPromiseRef.current;
+    }
+
+    const elapsedSinceFailure = Date.now() - lastModelFailureAtRef.current;
+    if (
+      lastModelFailureAtRef.current > 0
+      && elapsedSinceFailure < MODEL_RETRY_COOLDOWN_MS
+    ) {
+      const retrySeconds = Math.ceil((MODEL_RETRY_COOLDOWN_MS - elapsedSinceFailure) / 1000);
+      setError(new Error(`Face model initialization is cooling down after a failure. Retry in ${retrySeconds}s.`));
+      setState(FaceEmbeddingState.ERROR);
+      return false;
+    }
+
     setState(FaceEmbeddingState.LOADING);
     setError(null);
     setModelLoadProgress(0);
 
-    try {
-      // Dynamically import face-api.js
-      const faceapi = (await import('@vladmandic/face-api')) as unknown as FaceApiModule;
-      faceapiRef.current = faceapi;
-      setModelLoadProgress(10);
+    const pendingLoad = (async (): Promise<boolean> => {
+      try {
+        // Dynamically import face-api.js
+        const faceapi = (await import('@vladmandic/face-api')) as unknown as FaceApiModule;
+        faceapiRef.current = faceapi;
+        setModelLoadProgress(10);
 
-      // Load TinyFaceDetector model (fast, lightweight face detection)
-      await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URLS.base);
-      setModelLoadProgress(40);
+        // Load TinyFaceDetector model (fast, lightweight face detection)
+        await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URLS.base);
+        setModelLoadProgress(40);
 
-      // Load face landmark model (required for face recognition)
-      await faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URLS.base);
-      setModelLoadProgress(70);
+        // Load face landmark model (required for face recognition)
+        await faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URLS.base);
+        setModelLoadProgress(70);
 
-      // Load face recognition model (produces 128-D embeddings)
-      await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URLS.base);
-      setModelLoadProgress(100);
+        // Load face recognition model (produces 128-D embeddings)
+        await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URLS.base);
+        setModelLoadProgress(100);
 
-      setState(FaceEmbeddingState.READY);
-      setIsReady(true);
-      return true;
-    } catch (err: unknown) {
-      console.error('Failed to load face-api.js models:', err);
-      setError(err instanceof Error ? err : new Error('Failed to load face model'));
-      setState(FaceEmbeddingState.ERROR);
-      return false;
-    }
+        lastModelFailureAtRef.current = 0;
+        setState(FaceEmbeddingState.READY);
+        setIsReady(true);
+        return true;
+      } catch (err: unknown) {
+        const modelError = toFaceModelLoadError(err);
+        lastModelFailureAtRef.current = Date.now();
+        console.error('Failed to load face-api.js models:', modelError);
+        setError(modelError);
+        setState(FaceEmbeddingState.ERROR);
+        return false;
+      } finally {
+        modelLoadPromiseRef.current = null;
+      }
+    })();
+
+    modelLoadPromiseRef.current = pendingLoad;
+    return pendingLoad;
   }, []);
 
   /**

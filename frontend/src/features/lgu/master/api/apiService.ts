@@ -1,14 +1,5 @@
 import { api, createMinimalPdfBlob, extractFilename, withFallback } from '@/lib/api-client';
 import {
-  appendEnterpriseInfraction,
-  getReportingWindowStatusForEnterprise,
-  readAllEnterpriseInfractions,
-  readSubmissionRecords,
-  setEnterpriseReportingControlStatus,
-  setGlobalReportingControlStatus,
-  type LguEnterpriseSubmissionRecord,
-} from '@/lib/portalBridge';
-import {
   defaultEnterpriseNoticeByStatus,
   defaultGlobalNoticeByStatus,
   toControlStatusFromAction,
@@ -22,7 +13,6 @@ import type {
   LguBarangaysGeoJsonResponse,
   LguBarangaysResponse,
   LguComplianceActionType,
-  LguEnterpriseAccount,
   LguEnterpriseAccountDraft,
   LguEnterpriseAccountsResponse,
   LguEnterpriseAnalyticsDetail,
@@ -45,8 +35,6 @@ import type {
   LguSettingsPayload,
 } from '@/types';
 
-const LGU_SETTINGS_STORAGE_KEY = 'lgu-master-settings-v1';
-const LGU_ENTERPRISE_AUDIT_SNAPSHOT_KEY = 'lgu-enterprise-audit-snapshot-v1';
 const DEFAULT_REPORTING_PERIOD = '2026-03';
 
 interface DownloadArtifact {
@@ -59,18 +47,6 @@ interface BarangayCenterSeed {
   id: string;
   name: string;
   center: LguGeoPoint;
-}
-
-interface LguEnterpriseAuditSnapshotRecord {
-  enterprise_id: string;
-  company_name: string;
-  submissionStatus: 'submitted' | 'pending';
-}
-
-interface LguEnterpriseAuditSnapshotPayload {
-  period: string;
-  updatedAt: string;
-  records: LguEnterpriseAuditSnapshotRecord[];
 }
 
 const SAN_PEDRO_BARANGAY_CENTERS: BarangayCenterSeed[] = [
@@ -341,65 +317,6 @@ const FALLBACK_LGU_OVERVIEW: LguOverviewAdminResponse = {
   },
 };
 
-const FALLBACK_ENTERPRISE_ACCOUNTS: LguEnterpriseAccount[] = SAN_PEDRO_BARANGAY_CENTERS.map(
-  (barangay, index) => ({
-    enterprise_id: `ent_lgu_biz_${String(index + 1).padStart(4, '0')}`,
-    company_name: `${barangay.name} Enterprise Node`,
-    linked_lgu_id: 'lgu_san_pedro_001',
-    barangay: barangay.name,
-    reporting_window_status: index % 4 === 0 ? 'OPEN' : 'CLOSED',
-    has_submitted_for_period: index % 3 === 0,
-    period: DEFAULT_REPORTING_PERIOD,
-  }),
-);
-
-const FALLBACK_REPORT_PACKS_RESPONSE: LguReportPacksResponse = {
-  reports: [
-    {
-      report_id: 'rpt_ent_lgu_biz_0001_2026_03',
-      enterprise_id: 'ent_lgu_biz_0001',
-      enterprise_name: 'San Antonio Enterprise Node',
-      period: {
-        month: DEFAULT_REPORTING_PERIOD,
-        start: `${DEFAULT_REPORTING_PERIOD}-01`,
-        end: `${DEFAULT_REPORTING_PERIOD}-31`,
-      },
-      submitted_at: '2026-03-30T08:30:00+08:00',
-      kpis: {
-        total_visitors_mtd: 8350,
-        trend_pct: 7.2,
-        avg_dwell: '1h 16m',
-        peak_visitor_hours: ['12:00 PM - 2:00 PM'],
-      },
-      charts: {
-        visitor_residence_breakdown: {
-          Foreigner: 23,
-          'Non-Local Resident': 31,
-          'Local Resident': 46,
-        },
-      },
-    },
-  ],
-};
-
-const FALLBACK_AUTHORITY_PACKAGE: LguAuthorityPackage = {
-  authority_package_id: 'auth_fallback_20260330',
-  generated_at: new Date().toISOString(),
-  classification: 'READY_FOR_HIGHER_AUTHORITY_SUBMISSION',
-  executive_summary: {
-    enterprise: 'Fallback Enterprise',
-    period: DEFAULT_REPORTING_PERIOD,
-    total_visitors: 12340,
-    average_dwell: '1h 11m',
-    top_peak_hours: ['12:00 PM - 2:00 PM'],
-  },
-  compliance_notes: [
-    'Generated using fallback response path.',
-    'Use backend connectivity for authoritative package data.',
-  ],
-  attachments: ['authority_pdf', 'authority_docx'],
-};
-
 const FALLBACK_ENTERPRISE_ANALYTICS: LguEnterpriseAnalyticsResponse = {
   enterprise: {
     id: 1,
@@ -595,91 +512,6 @@ const actionLabelMap: Record<LguComplianceActionType, string> = {
 
 const LATE_SUBMISSION_INFRACTION_TYPE = 'Failed to Comply - Late Submission';
 
-const canUseStorage = (): boolean =>
-  typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
-
-const writeEnterpriseAuditSnapshot = (
-  period: string,
-  accounts: LguEnterpriseAccount[],
-): void => {
-  if (!canUseStorage()) {
-    return;
-  }
-
-  const payload: LguEnterpriseAuditSnapshotPayload = {
-    period,
-    updatedAt: new Date().toISOString(),
-    records: accounts.map((account) => ({
-      enterprise_id: account.enterprise_id,
-      company_name: account.company_name,
-      submissionStatus: account.has_submitted_for_period ? 'submitted' : 'pending',
-    })),
-  };
-
-  window.localStorage.setItem(LGU_ENTERPRISE_AUDIT_SNAPSHOT_KEY, JSON.stringify(payload));
-};
-
-const readEnterpriseAuditSnapshot = (
-  period: string,
-): LguEnterpriseAuditSnapshotRecord[] => {
-  if (!canUseStorage()) {
-    return [];
-  }
-
-  try {
-    const raw = window.localStorage.getItem(LGU_ENTERPRISE_AUDIT_SNAPSHOT_KEY);
-    if (!raw) {
-      return [];
-    }
-
-    const parsed = JSON.parse(raw) as Partial<LguEnterpriseAuditSnapshotPayload>;
-    if (parsed.period !== period || !Array.isArray(parsed.records)) {
-      return [];
-    }
-
-    return parsed.records.filter(
-      (record): record is LguEnterpriseAuditSnapshotRecord =>
-        Boolean(record)
-        && typeof record.enterprise_id === 'string'
-        && typeof record.company_name === 'string'
-        && (record.submissionStatus === 'submitted' || record.submissionStatus === 'pending'),
-    );
-  } catch {
-    return [];
-  }
-};
-
-const buildPeriodRange = (month: string): { start: string; end: string } => {
-  const fallback = {
-    start: `${month}-01`,
-    end: `${month}-31`,
-  };
-
-  const date = new Date(`${month}-01T00:00:00`);
-  if (Number.isNaN(date.valueOf())) {
-    return fallback;
-  }
-
-  const endDate = new Date(date);
-  endDate.setMonth(endDate.getMonth() + 1);
-  endDate.setDate(0);
-
-  return {
-    start: `${month}-01`,
-    end: `${month}-${String(endDate.getDate()).padStart(2, '0')}`,
-  };
-};
-
-const readBridgeSubmissions = (period?: string): LguEnterpriseSubmissionRecord[] => {
-  const submissions = readSubmissionRecords();
-
-  if (!period) {
-    return submissions;
-  }
-
-  return submissions.filter((record) => record.month === period);
-};
-
 const buildLateSubmissionInfraction = (
   enterpriseId: string,
   enterpriseName: string,
@@ -697,97 +529,6 @@ const buildLateSubmissionInfraction = (
     source: 'LGU_CLOSE_REPORTING_WINDOW',
     note: `${enterpriseName} failed to submit the ${period} report before LGU window closure.`,
   };
-};
-
-const getEnterpriseLabel = (enterpriseId: string, fallbackName?: string): string => {
-  if (fallbackName) {
-    return fallbackName;
-  }
-
-  const account = FALLBACK_ENTERPRISE_ACCOUNTS.find((item) => item.enterprise_id === enterpriseId);
-  if (account?.company_name) {
-    return account.company_name;
-  }
-
-  return enterpriseId;
-};
-
-const inferBarangayFromText = (value?: string): string | undefined => {
-  if (!value) {
-    return undefined;
-  }
-
-  const normalized = normalizeBarangayName(value);
-  const matched = SAN_PEDRO_BARANGAY_CENTERS
-    .slice()
-    .sort((left, right) => right.name.length - left.name.length)
-    .find((seed) => normalized.includes(normalizeBarangayName(seed.name)));
-
-  return matched?.name;
-};
-
-const getEnterpriseBarangay = (enterpriseId: string, fallbackName?: string): string | undefined => {
-  const account = FALLBACK_ENTERPRISE_ACCOUNTS.find((item) => item.enterprise_id === enterpriseId);
-
-  return account?.barangay || inferBarangayFromText(fallbackName);
-};
-
-const toReportPackFromBridge = (record: LguEnterpriseSubmissionRecord): LguReportPack => {
-  const { start, end } = buildPeriodRange(record.month);
-
-  return {
-    report_id: record.reportId,
-    enterprise_id: record.enterpriseId,
-    enterprise_name: getEnterpriseLabel(record.enterpriseId, record.enterpriseName),
-    linked_lgu_id: 'lgu_san_pedro_001',
-    period: {
-      month: record.month,
-      start,
-      end,
-    },
-    submitted_at: record.submittedAt,
-    submitted_by_user_id: 'enterprise-local-bridge',
-    kpis: {
-      total_visitors_mtd: record.totalPeopleCount,
-      trend_pct: 0,
-      avg_dwell: 'N/A',
-      peak_visitor_hours: ['N/A'],
-    },
-    charts: {
-      visitor_residence_breakdown: {
-        Tourist: record.touristTaggedRows,
-        Visitor: record.visitorTaggedRows,
-      },
-    },
-  };
-};
-
-const toTimestamp = (value: string): number => {
-  const parsed = Date.parse(value);
-  if (Number.isNaN(parsed)) {
-    return 0;
-  }
-  return parsed;
-};
-
-const mergeReportPacks = (
-  apiReports: LguReportPack[],
-  bridgeReports: LguReportPack[],
-): LguReportPack[] => {
-  const byEnterprisePeriod = new Map<string, LguReportPack>();
-
-  [...apiReports, ...bridgeReports].forEach((report) => {
-    const key = `${report.enterprise_id}::${report.period.month}`;
-    const existing = byEnterprisePeriod.get(key);
-
-    if (!existing || toTimestamp(report.submitted_at) >= toTimestamp(existing.submitted_at)) {
-      byEnterprisePeriod.set(key, report);
-    }
-  });
-
-  return Array.from(byEnterprisePeriod.values()).sort(
-    (left, right) => toTimestamp(right.submitted_at) - toTimestamp(left.submitted_at),
-  );
 };
 
 export const fetchLguOverview = async (): Promise<LguOverviewResponse> =>
@@ -953,63 +694,8 @@ export const fetchEnterpriseAnalyticsSummary = async (
 export const fetchLguEnterpriseAccounts = async (
   period = DEFAULT_REPORTING_PERIOD,
 ): Promise<LguEnterpriseAccountsResponse> => {
-  const payload = await withFallback<LguEnterpriseAccountsResponse>(
-    () => api.get('/lgu/enterprise-accounts', { params: { period } }),
-    {
-      period,
-      accounts: FALLBACK_ENTERPRISE_ACCOUNTS,
-    },
-  );
-
-  const submissionByEnterprise = new Map<string, LguEnterpriseSubmissionRecord>();
-  readBridgeSubmissions(period).forEach((record) => {
-    submissionByEnterprise.set(record.enterpriseId, record);
-  });
-  const infractionsByEnterprise = readAllEnterpriseInfractions();
-
-  const merged = payload.accounts.map((account) => {
-    const bridgeSubmission = submissionByEnterprise.get(account.enterprise_id);
-    const bridgeWindowStatus = getReportingWindowStatusForEnterprise(account.enterprise_id, period);
-    const hasSubmitted = account.has_submitted_for_period || Boolean(bridgeSubmission);
-    const resolvedCompanyName = bridgeSubmission?.enterpriseName || account.company_name;
-    const barangay = account.barangay || getEnterpriseBarangay(account.enterprise_id, resolvedCompanyName);
-    const infractions = infractionsByEnterprise[account.enterprise_id] || [];
-    const latestInfraction = infractions[0] || null;
-
-    return {
-      ...account,
-      company_name: resolvedCompanyName,
-      barangay,
-      infraction_count: infractions.length,
-      latest_infraction: latestInfraction,
-      has_submitted_for_period: hasSubmitted,
-      reporting_window_status: hasSubmitted
-        ? 'SUBMITTED'
-        : bridgeWindowStatus
-          ? bridgeWindowStatus
-          : account.reporting_window_status,
-    };
-  });
-
-  const knownIds = new Set(merged.map((account) => account.enterprise_id));
-
-  submissionByEnterprise.forEach((record) => {
-    if (knownIds.has(record.enterpriseId)) {
-      return;
-    }
-
-    merged.push({
-      enterprise_id: record.enterpriseId,
-      company_name: getEnterpriseLabel(record.enterpriseId, record.enterpriseName),
-      linked_lgu_id: 'lgu_san_pedro_001',
-      barangay: getEnterpriseBarangay(record.enterpriseId, record.enterpriseName),
-      reporting_window_status: 'SUBMITTED',
-      has_submitted_for_period: true,
-      infraction_count: (infractionsByEnterprise[record.enterpriseId] || []).length,
-      latest_infraction: (infractionsByEnterprise[record.enterpriseId] || [])[0] || null,
-      period,
-    });
-  });
+  const response = await api.get<LguEnterpriseAccountsResponse>('/lgu/enterprise-accounts', { params: { period } });
+  const payload = response.data;
 
   const compareByBarangay = (left?: string, right?: string): number => {
     const leftLabel = left || 'Unassigned Barangay';
@@ -1017,18 +703,14 @@ export const fetchLguEnterpriseAccounts = async (
     return leftLabel.localeCompare(rightLabel);
   };
 
-  const response: LguEnterpriseAccountsResponse = {
+  return {
     period,
-    accounts: merged.sort(
+    accounts: payload.accounts.sort(
       (left, right) =>
         compareByBarangay(left.barangay, right.barangay)
         || left.company_name.localeCompare(right.company_name),
     ),
   };
-
-  writeEnterpriseAuditSnapshot(period, response.accounts);
-
-  return response;
 };
 
 export const createEnterpriseAccount = async (
@@ -1037,10 +719,11 @@ export const createEnterpriseAccount = async (
   try {
     const response = await api.post('/lgu/enterprise-accounts', payload);
     return toMutationResult(response.data, 'Enterprise account created successfully.');
-  } catch {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to create enterprise account.';
     return {
-      success: true,
-      message: 'Enterprise account saved in LGU portal (fallback mode).',
+      success: false,
+      message,
     };
   }
 };
@@ -1052,10 +735,11 @@ export const updateEnterpriseAccount = async (
   try {
     const response = await api.put(`/lgu/enterprise-accounts/${encodeURIComponent(enterpriseId)}`, payload);
     return toMutationResult(response.data, 'Enterprise account updated successfully.');
-  } catch {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to update enterprise account.';
     return {
-      success: true,
-      message: 'Enterprise account updated locally (fallback mode).',
+      success: false,
+      message,
     };
   }
 };
@@ -1066,10 +750,11 @@ export const deleteEnterpriseAccount = async (
   try {
     const response = await api.delete(`/lgu/enterprise-accounts/${encodeURIComponent(enterpriseId)}`);
     return toMutationResult(response.data, 'Enterprise account deleted successfully.');
-  } catch {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to delete enterprise account.';
     return {
-      success: true,
-      message: 'Enterprise account removed from LGU table (fallback mode).',
+      success: false,
+      message,
     };
   }
 };
@@ -1077,42 +762,19 @@ export const deleteEnterpriseAccount = async (
 export const fetchLguReportPacks = async (
   period?: string,
 ): Promise<LguReportPacksResponse> => {
-  const payload = await withFallback<LguReportPacksResponse>(
-    () => api.get('/lgu/reports', { params: period ? { period } : undefined }),
-    FALLBACK_REPORT_PACKS_RESPONSE,
-  );
-
-  const bridgeReports = readBridgeSubmissions(period).map(toReportPackFromBridge);
-
-  return {
-    reports: mergeReportPacks(payload.reports, bridgeReports),
-  };
+  const response = await api.get<LguReportPacksResponse>('/lgu/reports', { params: period ? { period } : undefined });
+  return response.data;
 };
 
 export const fetchLguReportPackDetail = async (reportId: string): Promise<LguReportPack> => {
-  const localMatch = readBridgeSubmissions().find((record) => record.reportId === reportId);
-  if (localMatch) {
-    return toReportPackFromBridge(localMatch);
-  }
-
-  const fallbackPack = FALLBACK_REPORT_PACKS_RESPONSE.reports[0];
-  return withFallback<LguReportPack>(
-    () => api.get(`/lgu/reports/${encodeURIComponent(reportId)}`),
-    {
-      ...fallbackPack,
-      report_id: reportId,
-    },
-  );
+  const response = await api.get<LguReportPack>(`/lgu/reports/${encodeURIComponent(reportId)}`);
+  return response.data;
 };
 
-export const generateAuthorityPackage = async (reportId: string): Promise<LguAuthorityPackage> =>
-  withFallback<LguAuthorityPackage>(
-    () => api.post(`/lgu/reports/${encodeURIComponent(reportId)}/generate-authority-package`),
-    {
-      ...FALLBACK_AUTHORITY_PACKAGE,
-      authority_package_id: `auth_fallback_${reportId}`,
-    },
-  );
+export const generateAuthorityPackage = async (reportId: string): Promise<LguAuthorityPackage> => {
+  const response = await api.post<LguAuthorityPackage>(`/lgu/reports/${encodeURIComponent(reportId)}/generate-authority-package`);
+  return response.data;
+};
 
 export const downloadAuthorityPackagePdf = async (
   reportId: string,
@@ -1191,54 +853,33 @@ export const notifyEnterpriseToComply = async (
     || `${actionLabelMap[request.action]} sent successfully.`;
 
   try {
-    const response = await api.post<{ message?: string }>(
-      '/lgu/enterprise-actions/notify-submit',
-      {
-        enterprise_id: request.enterpriseId,
-        period: request.period,
-        action: request.action,
-        message: request.message,
-      },
-    );
-
-    const payload = response.data;
-    setEnterpriseReportingControlStatus({
-      enterpriseId: request.enterpriseId,
+    await api.post('/lgu/compliance-actions', {
+      enterprise_id: request.enterpriseId,
       period: request.period,
-      message: payload.message || resolvedMessage,
-      triggeredBy: 'LGU Admin',
-      status: controlStatus,
+      action_type: request.action,
+      message: request.message,
+    });
+    await api.post('/lgu/reporting-window/open', {
+      enterprise_id: request.enterpriseId,
+      period: request.period,
+      status: request.action,
+      message: resolvedMessage,
     });
 
     return {
       success: true,
-      message: payload.message || resolvedMessage,
+      message: resolvedMessage,
       enterpriseId: request.enterpriseId,
       action: request.action,
       windowStatus,
       triggeredAt: timestamp,
     };
-  } catch {
-    await withFallback<{ status?: string }>(
-      () =>
-        api.post('/lgu/reporting-window/open', {
-          enterprise_id: request.enterpriseId,
-          period: request.period,
-        }),
-      { status: 'OPEN' },
-    );
-
-    setEnterpriseReportingControlStatus({
-      enterpriseId: request.enterpriseId,
-      period: request.period,
-      message: resolvedMessage,
-      triggeredBy: 'LGU Admin',
-      status: controlStatus,
-    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to notify enterprise.';
 
     return {
-      success: true,
-      message: resolvedMessage,
+      success: false,
+      message,
       enterpriseId: request.enterpriseId,
       action: request.action,
       windowStatus,
@@ -1284,27 +925,32 @@ export const notifyAllEnterprisesToSubmit = async (
 
   const controlStatus = resolveGlobalControlStatus(normalized);
   const message = normalized.message || defaultGlobalNoticeByStatus[controlStatus];
-  const apiAction = controlStatus === 'closed' ? 'CLOSE_ALL' : toReportingWindowStatus(controlStatus);
   const triggeredBy = normalized.triggeredBy || 'LGU Admin';
 
   try {
-    await api.post('/lgu/enterprise-actions/notify-submit-all', {
-      period: normalized.period,
-      action: apiAction,
-      message,
-    });
-  } catch {
-    // Frontend-only fallback mode; local bridge state is the source of truth.
+    if (controlStatus === 'closed') {
+      await api.post('/lgu/reporting-window/close-all', {
+        period: normalized.period,
+        message,
+      });
+    } else {
+      await api.post('/lgu/reporting-window/open-all', {
+        period: normalized.period,
+        status: toReportingWindowStatus(controlStatus),
+        message,
+      });
+    }
+  } catch (error) {
+    const failure = error instanceof Error ? error.message : 'Unable to notify all enterprises.';
+    return {
+      success: false,
+      message: failure,
+    };
   }
 
-  setGlobalReportingControlStatus({
-    period: normalized.period,
-    message,
-    triggeredBy,
-    status: controlStatus,
-  });
-
   const statusLabel = toReportingWindowStatus(controlStatus);
+  const _triggeredBy = triggeredBy;
+  void _triggeredBy;
 
   return {
     success: true,
@@ -1338,37 +984,24 @@ export const closeReportingWindowAndAuditPenalties = async (params: {
     }),
   ]);
 
-  const submittedEnterpriseIds = new Set(
-    readBridgeSubmissions(period).map((record) => record.enterpriseId),
-  );
-
-  const cachedSnapshot = readEnterpriseAuditSnapshot(period);
-  const cachedLookup = new Map<string, LguEnterpriseAuditSnapshotRecord>(
-    cachedSnapshot.map((entry) => [entry.enterprise_id, entry]),
-  );
-
-  const pendingAccounts = accountsPayload.accounts.filter((account) => {
-    const cached = cachedLookup.get(account.enterprise_id);
-    const isSubmitted = cached
-      ? cached.submissionStatus === 'submitted'
-      : account.has_submitted_for_period;
-
-    if (isSubmitted) {
-      return false;
-    }
-
-    return !submittedEnterpriseIds.has(account.enterprise_id);
-  });
+  const pendingAccounts = accountsPayload.accounts.filter((account) => !account.has_submitted_for_period);
 
   const penalizedEnterpriseIds: string[] = [];
 
-  pendingAccounts.forEach((account) => {
-    appendEnterpriseInfraction(
-      account.enterprise_id,
-      buildLateSubmissionInfraction(account.enterprise_id, account.company_name, period),
-    );
-    penalizedEnterpriseIds.push(account.enterprise_id);
-  });
+  await Promise.all(
+    pendingAccounts.map(async (account) => {
+      const infraction = buildLateSubmissionInfraction(account.enterprise_id, account.company_name, period);
+      await api.post('/lgu/infractions', {
+        enterprise_id: account.enterprise_id,
+        period,
+        infraction_type: infraction.type,
+        severity: infraction.severity,
+        source: infraction.source,
+        note: infraction.note,
+      });
+      penalizedEnterpriseIds.push(account.enterprise_id);
+    }),
+  );
 
   return {
     success: closureResult.success,
@@ -1385,22 +1018,13 @@ export const openEnterpriseSubmissionWindow = async (
   enterpriseId: string,
   period: string,
 ): Promise<LguMutationResult> => {
-  const payload = await withFallback<{ status?: string }>(
-    () =>
-      api.post('/lgu/reporting-window/open', {
-        enterprise_id: enterpriseId,
-        period,
-      }),
-    { status: 'OPEN' },
-  );
-
-  setEnterpriseReportingControlStatus({
-    enterpriseId,
+  const response = await api.post<{ status?: string }>('/lgu/reporting-window/open', {
+    enterprise_id: enterpriseId,
     period,
+    status: 'OPEN',
     message: defaultEnterpriseNoticeByStatus.open,
-    triggeredBy: 'LGU Admin',
-    status: 'open',
   });
+  const payload = response.data;
 
   return {
     success: true,
@@ -1409,30 +1033,7 @@ export const openEnterpriseSubmissionWindow = async (
 };
 
 export const loadLguSettings = (): LguSettingsPayload => {
-  const fallback = defaultLguSettings();
-
-  try {
-    const raw = localStorage.getItem(LGU_SETTINGS_STORAGE_KEY);
-    if (!raw) {
-      return fallback;
-    }
-
-    const parsed = JSON.parse(raw) as Partial<LguSettingsPayload>;
-
-    return {
-      ...fallback,
-      ...parsed,
-      currentPassword: '',
-      newPassword: '',
-      confirmNewPassword: '',
-      preferences: {
-        ...fallback.preferences,
-        ...parsed.preferences,
-      },
-    };
-  } catch {
-    return fallback;
-  }
+  return defaultLguSettings();
 };
 
 export const saveLguSettings = async (
@@ -1455,30 +1056,23 @@ export const saveLguSettings = async (
   }
 
   try {
-    await api.post('/lgu/settings', {
-      adminUsername: payload.adminUsername,
-      adminEmail: payload.adminEmail,
-      preferences: payload.preferences,
-      currentPassword: payload.currentPassword,
-      newPassword: payload.newPassword,
-    });
-  } catch {
-    // Keep frontend persistence as fallback.
+    await Promise.all([
+      api.put('/lgu/settings', { setting_key: 'admin_username', setting_value: payload.adminUsername }),
+      api.put('/lgu/settings', { setting_key: 'admin_email', setting_value: payload.adminEmail }),
+      api.put('/lgu/settings', { setting_key: 'preferences', setting_value: payload.preferences }),
+    ]);
+
+    return {
+      success: true,
+      message: 'LGU settings updated successfully.',
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to save LGU settings right now.';
+    return {
+      success: false,
+      message,
+    };
   }
-
-  localStorage.setItem(
-    LGU_SETTINGS_STORAGE_KEY,
-    JSON.stringify({
-      adminUsername: payload.adminUsername,
-      adminEmail: payload.adminEmail,
-      preferences: payload.preferences,
-    }),
-  );
-
-  return {
-    success: true,
-    message: 'LGU settings updated successfully.',
-  };
 };
 
 export type { DownloadArtifact };

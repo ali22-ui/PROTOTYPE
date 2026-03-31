@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     # IP Webcam Configuration - requires explicit user selection, no default auto-start
     camera_source_mode: CameraSourceMode | None = None
     ip_webcam_enabled: bool = True
-    ip_webcam_base_url: str = "http://192.168.1.4:8080"
+    ip_webcam_base_url: str = "http://192.168.137.57:8080"
     ip_webcam_video_path: str = "/video"
     ip_webcam_snapshot_path: str = "/shot.jpg"
     ip_webcam_connect_timeout_seconds: float = 5.0
@@ -47,7 +47,44 @@ class Settings(BaseSettings):
         """Parse CORS origins from comma-separated string."""
         if self.cors_origins == "*":
             return ["*"]
-        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+        normalized_origins: list[str] = []
+        seen: set[str] = set()
+
+        def add_origin(origin: str) -> None:
+            cleaned = origin.strip()
+            if not cleaned:
+                return
+
+            parsed = urlparse(cleaned)
+            if not parsed.scheme or not parsed.netloc:
+                return
+
+            canonical = f"{parsed.scheme}://{parsed.netloc}"
+            if canonical in seen:
+                return
+
+            seen.add(canonical)
+            normalized_origins.append(canonical)
+
+            host = parsed.hostname
+            if host not in ("localhost", "127.0.0.1"):
+                return
+
+            counterpart = "127.0.0.1" if host == "localhost" else "localhost"
+            port = f":{parsed.port}" if parsed.port else ""
+            counterpart_origin = f"{parsed.scheme}://{counterpart}{port}"
+
+            if counterpart_origin in seen:
+                return
+
+            seen.add(counterpart_origin)
+            normalized_origins.append(counterpart_origin)
+
+        for origin in self.cors_origins.split(","):
+            add_origin(origin)
+
+        return normalized_origins
 
     @property
     def cors_allow_methods_list(self) -> list[str]:

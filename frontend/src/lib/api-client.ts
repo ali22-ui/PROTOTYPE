@@ -41,6 +41,8 @@ export const withFallback = async <T>(
   request: () => Promise<T | ApiResponseLike<T>>,
   fallback: T,
 ): Promise<T> => {
+  void fallback;
+
   try {
     const result = await request();
     if (hasDataProperty<T>(result)) {
@@ -49,9 +51,10 @@ export const withFallback = async <T>(
 
     return result;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn('API unavailable, using fallback data:', message);
-    return fallback;
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error(String(error));
   }
 };
 

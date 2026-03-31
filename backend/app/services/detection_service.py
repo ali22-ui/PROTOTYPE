@@ -7,6 +7,7 @@ from typing import Optional
 
 from app.core.config import get_settings
 from app.core.supabase import get_supabase_client, is_supabase_available
+from app.state import runtime_store
 from app.schemas.detection import (
     DeduplicationStats,
     DetectionBatchRequest,
@@ -20,6 +21,44 @@ from app.schemas.detection import (
     VisitorStatistics,
 )
 from domain_exceptions import DomainServiceUnavailableError
+
+
+def _month_bounds_utc(month: str) -> tuple[datetime, datetime]:
+    start = datetime.strptime(month, "%Y-%m").replace(tzinfo=timezone.utc)
+    if start.month == 12:
+        end = start.replace(year=start.year + 1, month=1)
+    else:
+        end = start.replace(month=start.month + 1)
+    return start, end
+
+
+def _parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+
+    return dt.astimezone(timezone.utc)
+
+
+def _append_runtime_detection_events(events: list[DetectionEventCreate]) -> None:
+    for event in events:
+        stamp = event.timestamp.astimezone().strftime("%I:%M:%S %p")
+        detail = f"{event.sex.value.title()} detection | Track {event.track_id} | Dwell {event.dwell_seconds}s | {stamp}"
+        runtime_store.append_camera_event(event.enterprise_id, detail)
+
+
+def _append_runtime_unified_events(events: list[UnifiedDetectionEvent]) -> None:
+    for event in events:
+        stamp = event.last_seen.astimezone().strftime("%I:%M:%S %p")
+        detail = f"{event.gender.value.title()} person | ID {event.person_id} | Dwell {event.total_dwell_seconds}s | {stamp}"
+        runtime_store.append_camera_event(event.enterprise_id, detail)
 
 
 def insert_detection_events(batch: DetectionBatchRequest) -> DetectionBatchResponse:
@@ -59,6 +98,9 @@ def insert_detection_events(batch: DetectionBatchRequest) -> DetectionBatchRespo
         result = client.table("detection_events").insert(records).execute()
         inserted = len(result.data) if result.data else 0
         failed = len(batch.events) - inserted
+
+        if inserted > 0:
+            _append_runtime_detection_events(batch.events)
 
     except Exception as e:
         print(f"Error inserting detection events: {e}")
@@ -127,6 +169,8 @@ def insert_unified_detection_events(
 
     # Update aggregated statistics
     _update_unified_statistics(batch.events)
+    if inserted > 0 or updated > 0:
+        _append_runtime_unified_events(batch.events)
 
     return UnifiedDetectionBatchResponse(
         inserted_count=inserted,
@@ -498,3 +542,175 @@ def cleanup_old_detections() -> int:
     except Exception as e:
         print(f"Error cleaning up old detections: {e}")
         return 0
+
+
+def get_recent_detection_feed(
+    enterprise_id: str,
+    month: Optional[str] = None,
+    limit: int = 24,
+) -> list[dict]:
+    """
+    Return recent detection feed rows from database for monitoring surfaces.
+    """
+    if not is_supabase_available():
+        return []
+
+    client = get_supabase_client()
+    if client is None:
+        return []
+
+    bounded_limit = min(max(limit, 1), 200)
+    query = (
+        client.table("detection_events")
+        .select("track_id,timestamp,sex,dwell_seconds")
+        .eq("enterprise_id", enterprise_id)
+    )
+
+    if month:
+        try:
+            start, end = _month_bounds_utc(month)
+            query = query.gte("timestamp", start.isoformat()).lt("timestamp", end.isoformat())
+        except ValueError:
+            return []
+
+    try:
+        result = query.order("timestamp", desc=True).limit(bounded_limit).execute()
+    except Exception as error:
+        print(f"Error loading recent detection feed: {error}")
+        return []
+
+    rows = result.data or []
+    feed_rows: list[dict] = []
+    total_rows = len(rows)
+
+    for index, row in enumerate(rows):
+        time_iso = str(row.get("timestamp") or "")
+        parsed_time = _parse_iso_datetime(time_iso)
+        if not parsed_time:
+            continue
+
+        track_id = str(row.get("track_id") or f"track-{index + 1}")
+        sex_value = str(row.get("sex") or "unknown").title()
+        dwell_seconds = int(row.get("dwell_seconds") or 0)
+        feed_rows.append(
+            {
+                "id": f"{track_id}-{parsed_time.isoformat()}",
+                "time_iso": parsed_time.isoformat(),
+                "frame": max(1, total_rows - index),
+                "details": f"{sex_value} detection | Track {track_id} | Dwell {dwell_seconds}s",
+            }
+        )
+
+    return feed_rows
+
+
+def get_camera_log_sessions(
+    enterprise_id: str,
+    month: Optional[str] = None,
+    limit: int = 500,
+) -> list[dict]:
+    """
+    Build camera log session rows from DB detection events.
+    """
+    if not is_supabase_available():
+        return []
+
+    client = get_supabase_client()
+    if client is None:
+        return []
+
+    bounded_limit = min(max(limit, 1), 1000)
+    fetch_limit = min(max(bounded_limit * 12, 240), 5000)
+
+    query = (
+        client.table("detection_events")
+        .select("track_id,timestamp,first_seen,sex,dwell_seconds")
+        .eq("enterprise_id", enterprise_id)
+    )
+
+    if month:
+        try:
+            start, end = _month_bounds_utc(month)
+            query = query.gte("timestamp", start.isoformat()).lt("timestamp", end.isoformat())
+        except ValueError:
+            return []
+
+    try:
+        result = query.order("timestamp", desc=True).limit(fetch_limit).execute()
+    except Exception as error:
+        print(f"Error loading camera log sessions: {error}")
+        return []
+
+    rows = result.data or []
+    grouped: dict[str, dict] = {}
+
+    for row in rows:
+        track_id = str(row.get("track_id") or "")
+        if not track_id:
+            continue
+
+        timestamp = _parse_iso_datetime(str(row.get("timestamp") or ""))
+        first_seen = _parse_iso_datetime(str(row.get("first_seen") or "")) or timestamp
+        if not timestamp or not first_seen:
+            continue
+
+        entry = grouped.get(track_id)
+        if entry is None:
+            entry = {
+                "track_id": track_id,
+                "time_in": first_seen,
+                "time_out": timestamp,
+                "male": 0,
+                "female": 0,
+                "unknown": 0,
+                "max_dwell": 0,
+            }
+            grouped[track_id] = entry
+
+        if first_seen < entry["time_in"]:
+            entry["time_in"] = first_seen
+        if timestamp > entry["time_out"]:
+            entry["time_out"] = timestamp
+
+        sex_value = str(row.get("sex") or "unknown")
+        if sex_value == "male":
+            entry["male"] += 1
+        elif sex_value == "female":
+            entry["female"] += 1
+        else:
+            entry["unknown"] += 1
+
+        dwell_seconds = int(row.get("dwell_seconds") or 0)
+        if dwell_seconds > entry["max_dwell"]:
+            entry["max_dwell"] = dwell_seconds
+
+    sessions: list[dict] = []
+    sorted_entries = sorted(grouped.values(), key=lambda item: item["time_in"], reverse=True)
+
+    for index, entry in enumerate(sorted_entries[:bounded_limit]):
+        elapsed_seconds = int((entry["time_out"] - entry["time_in"]).total_seconds())
+        duration_seconds = max(elapsed_seconds, int(entry["max_dwell"]))
+        duration_hours = round(duration_seconds / 3600, 2)
+        classification = "Tourist" if duration_hours >= 8 else "Visitor"
+
+        male_events = int(entry["male"])
+        female_events = int(entry["female"])
+        unknown_events = int(entry["unknown"])
+        male_count = 1 if male_events >= female_events and male_events >= unknown_events else 0
+        female_count = 1 if female_events > male_events and female_events >= unknown_events else 0
+
+        sessions.append(
+            {
+                "id": f"{entry['track_id']}-{index + 1}",
+                "unique_id": entry["track_id"],
+                "time_in_iso": entry["time_in"].isoformat(),
+                "time_out_iso": entry["time_out"].isoformat(),
+                "duration_hours": duration_hours,
+                "classification": classification,
+                "male_count": male_count,
+                "female_count": female_count,
+                "total_count": 1,
+            }
+        )
+
+    return sessions

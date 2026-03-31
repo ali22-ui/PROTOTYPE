@@ -4,6 +4,10 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
+import {
+  MEDIAPIPE_PERSON_MODEL_URL,
+  MEDIAPIPE_WASM_BASE_URL,
+} from '../constants/model-assets';
 import type {
   BBoxPercent,
   PersonTrackDetection,
@@ -15,6 +19,7 @@ const DETECTION_INTERVAL_MS = 150; // ~6-7 FPS
 const PERSON_CONFIDENCE_THRESHOLD = 0.6;
 const TRACK_DISTANCE_THRESHOLD = 100; // pixels for centroid matching
 const TRACK_EXPIRY_MS = 2000; // remove tracks not seen for 2 seconds
+const MODEL_RETRY_COOLDOWN_MS = 10000;
 
 /**
  * Detection states.
@@ -77,6 +82,19 @@ const getDistance = (p1: Point, p2: Point): number =>
 const generateTrackId = (): string =>
   `trk_${Date.now().toString(36)}_${Math.random().toString(36).substr(2, 5)}`;
 
+const toModelLoadError = (err: unknown): Error => {
+  const fallback = err instanceof Error ? err : new Error('Failed to load MediaPipe model');
+  const rawMessage = fallback.message || '';
+
+  if (/WebAssembly\.instantiate|Content Security policy directive|unsafe-eval/i.test(rawMessage)) {
+    return new Error(
+      'MediaPipe runtime blocked by Content Security Policy. Allow wasm runtime in script-src (wasm-unsafe-eval, and unsafe-eval for compatibility).',
+    );
+  }
+
+  return fallback;
+};
+
 /**
  * Hook for person detection using MediaPipe.
  * @param options - Configuration options
@@ -95,6 +113,8 @@ export function usePersonDetection({
   const animationFrameRef = useRef<number | null>(null);
   const lastDetectionTimeRef = useRef(0);
   const lastTimestampRef = useRef(0); // Track last timestamp to ensure monotonic increase
+  const modelLoadPromiseRef = useRef<Promise<boolean> | null>(null);
+  const lastModelFailureAtRef = useRef(0);
 
   const [state, setState] = useState<DetectionStateValue>(DetectionState.IDLE);
   const [error, setError] = useState<Error | null>(null);
@@ -111,36 +131,67 @@ export function usePersonDetection({
   const loadModel = useCallback(async (): Promise<boolean> => {
     if (detectorRef.current) return true;
 
-    setState(DetectionState.LOADING);
-    setError(null);
+    if (modelLoadPromiseRef.current) {
+      return modelLoadPromiseRef.current;
+    }
 
-    try {
-      const vision = (await import('@mediapipe/tasks-vision')) as unknown as VisionModule;
-      const { ObjectDetector, FilesetResolver } = vision;
-
-      const wasmFileset = await FilesetResolver.forVisionTasks(
-        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm',
-      );
-
-      detectorRef.current = await ObjectDetector.createFromOptions(wasmFileset, {
-        baseOptions: {
-          modelAssetPath:
-            'https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite',
-          delegate: 'GPU',
-        },
-        scoreThreshold: confidenceThreshold,
-        categoryAllowlist: ['person'],
-        runningMode: 'VIDEO',
-      });
-
-      setState(DetectionState.READY);
-      return true;
-    } catch (err: unknown) {
-      console.error('Failed to load MediaPipe model:', err);
-      setError(err instanceof Error ? err : new Error('Failed to load MediaPipe model'));
+    const elapsedSinceFailure = Date.now() - lastModelFailureAtRef.current;
+    if (
+      lastModelFailureAtRef.current > 0
+      && elapsedSinceFailure < MODEL_RETRY_COOLDOWN_MS
+    ) {
+      const retrySeconds = Math.ceil((MODEL_RETRY_COOLDOWN_MS - elapsedSinceFailure) / 1000);
+      setError(new Error(`Detection model is cooling down after a failure. Retry in ${retrySeconds}s.`));
       setState(DetectionState.ERROR);
       return false;
     }
+
+    setState(DetectionState.LOADING);
+    setError(null);
+
+    const pendingLoad = (async (): Promise<boolean> => {
+      try {
+        const vision = (await import('@mediapipe/tasks-vision')) as unknown as VisionModule;
+        const { ObjectDetector, FilesetResolver } = vision;
+
+        const wasmFileset = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM_BASE_URL);
+
+        const createDetector = async (
+          delegate: 'GPU' | 'CPU',
+        ): Promise<ObjectDetectorLike> => ObjectDetector.createFromOptions(wasmFileset, {
+          baseOptions: {
+            modelAssetPath: MEDIAPIPE_PERSON_MODEL_URL,
+            delegate,
+          },
+          scoreThreshold: confidenceThreshold,
+          categoryAllowlist: ['person'],
+          runningMode: 'VIDEO',
+        });
+
+        try {
+          detectorRef.current = await createDetector('GPU');
+        } catch (gpuError) {
+          console.warn('MediaPipe GPU delegate failed, falling back to CPU:', gpuError);
+          detectorRef.current = await createDetector('CPU');
+        }
+
+        lastModelFailureAtRef.current = 0;
+        setState(DetectionState.READY);
+        return true;
+      } catch (err: unknown) {
+        const modelError = toModelLoadError(err);
+        lastModelFailureAtRef.current = Date.now();
+        console.error('Failed to load MediaPipe model:', modelError);
+        setError(modelError);
+        setState(DetectionState.ERROR);
+        return false;
+      } finally {
+        modelLoadPromiseRef.current = null;
+      }
+    })();
+
+    modelLoadPromiseRef.current = pendingLoad;
+    return pendingLoad;
   }, [confidenceThreshold]);
 
   /**
@@ -274,6 +325,10 @@ export function usePersonDetection({
    * Start continuous detection loop.
    */
   const startDetection = useCallback(async (): Promise<boolean> => {
+    if (isRunning) {
+      return true;
+    }
+
     const videoElement = videoRef?.current;
     if (!videoElement) {
       setError(new Error('No video element provided'));
@@ -287,7 +342,10 @@ export function usePersonDetection({
     }
 
     const modelLoaded = await loadModel();
-    if (!modelLoaded) return false;
+    if (!modelLoaded) {
+      setIsRunning(false);
+      return false;
+    }
 
     setIsRunning(true);
     setState(DetectionState.RUNNING);
@@ -302,14 +360,19 @@ export function usePersonDetection({
 
     animationFrameRef.current = requestAnimationFrame(loop);
     return true;
-  }, [videoRef, loadModel, detectFrame]);
+  }, [videoRef, loadModel, detectFrame, isRunning]);
 
   /**
    * Stop detection loop.
    */
   const stopDetection = useCallback((): void => {
     setIsRunning(false);
-    setState(DetectionState.READY);
+    setState((prev) => {
+      if (prev === DetectionState.ERROR) {
+        return prev;
+      }
+      return detectorRef.current ? DetectionState.READY : DetectionState.IDLE;
+    });
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;

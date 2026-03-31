@@ -25,7 +25,25 @@ import type {
   User,
   VisitorStats,
 } from '@/types';
-import { buildSubmissionRecordFromLogs, upsertSubmissionRecord } from '@/lib/portalBridge';
+
+interface DbCameraLogRecord {
+  id: string;
+  unique_id: string;
+  time_in_iso: string;
+  time_out_iso: string;
+  duration_hours: number;
+  classification: string;
+  male_count: number;
+  female_count: number;
+  total_count: number;
+}
+
+interface RecentDetectionFeedEvent {
+  id: string;
+  time_iso: string;
+  frame: number;
+  details: string;
+}
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
 export const ENTERPRISE_SESSION_TOKEN_KEY = 'enterprise-session-token';
@@ -33,7 +51,6 @@ export const LGU_SESSION_TOKEN_KEY = 'lgu-session-token';
 const SESSION_USER_KEY = 'enterprise-session-user';
 const LEGACY_ENTERPRISE_ID_KEY = 'enterprise-account-id';
 const LEGACY_ENTERPRISE_NAME_KEY = 'enterprise-account-name';
-const ACCOUNT_SETTINGS_STORAGE_PREFIX = 'enterprise-account-settings-v1';
 
 const WEEKDAY_LABELS: DashboardWeeklyAreaPoint['day'][] = [
   'Sun',
@@ -130,9 +147,6 @@ const normalize = (value: string): string => value.trim().toLowerCase().replace(
 
 const getCurrentMonth = (): string => new Date().toISOString().slice(0, 7);
 
-const accountSettingsStorageKey = (enterpriseId: string): string =>
-  `${ACCOUNT_SETTINGS_STORAGE_PREFIX}:${enterpriseId}`;
-
 const toAppError = (error: unknown, fallback = 'Something went wrong.'): Error => {
   if (error instanceof Error) {
     return error;
@@ -213,33 +227,6 @@ const createDefaultAccountSettings = (
   };
 };
 
-const readCachedAccountSettings = (
-  enterpriseId: string,
-): EnterpriseAccountSettingsPayload | null => {
-  try {
-    const raw = localStorage.getItem(accountSettingsStorageKey(enterpriseId));
-    if (!raw) {
-      return null;
-    }
-
-    const parsed = JSON.parse(raw) as EnterpriseAccountSettingsPayload;
-    if (!parsed?.profile || !parsed?.preferences) {
-      return null;
-    }
-
-    return parsed;
-  } catch {
-    return null;
-  }
-};
-
-const cacheAccountSettings = (
-  enterpriseId: string,
-  payload: EnterpriseAccountSettingsPayload,
-): void => {
-  localStorage.setItem(accountSettingsStorageKey(enterpriseId), JSON.stringify(payload));
-};
-
 const parseTimeSlotToDate = (date: string, timeSlot: string): Date => {
   const matched = /(\d{1,2}):(\d{2})\s*(AM|PM)/i.exec(timeSlot);
   if (!matched) {
@@ -315,6 +302,32 @@ const adaptDetailedRowToCameraLog = (row: DetailedDetectionRow, index: number): 
     maleCount: row.male_total,
     femaleCount: row.female_total,
     totalCount: total,
+  };
+};
+
+const adaptDbCameraLogToCameraLog = (row: DbCameraLogRecord, index: number): CameraLog => {
+  const timeInIso = row.time_in_iso;
+  const timeOutIso = row.time_out_iso;
+  const durationHours = Number(row.duration_hours ?? 0);
+  const classification: CameraLog['classification'] =
+    String(row.classification || '').toLowerCase() === 'tourist' ? 'Tourist' : 'Visitor';
+  const maleCount = Number(row.male_count ?? 0);
+  const femaleCount = Number(row.female_count ?? 0);
+  const totalCount = Number(row.total_count ?? Math.max(1, maleCount + femaleCount));
+
+  return {
+    id: row.id || `${row.unique_id}-${index + 1}`,
+    uniqueId: row.unique_id || `CAM-${String(index + 1).padStart(5, '0')}`,
+    timeInIso,
+    timeOutIso,
+    timeIn: formatDateTime(timeInIso),
+    timeOut: formatDateTime(timeOutIso),
+    durationHours,
+    durationLabel: formatDuration(durationHours),
+    classification,
+    maleCount,
+    femaleCount,
+    totalCount,
   };
 };
 
@@ -450,16 +463,59 @@ export const fetchCameraStream = async (enterpriseId: string): Promise<CameraStr
 };
 
 export const fetchCameraLogs = async (enterpriseId: string, month?: string): Promise<CameraLog[]> => {
+  try {
+    const response = await http.get<DbCameraLogRecord[]>('/detections/camera-logs', {
+      params: {
+        enterprise_id: enterpriseId,
+        month,
+        limit: 1000,
+      },
+    });
+
+    const dbRows = response.data || [];
+    if (dbRows.length > 0) {
+      return dbRows
+        .map((row, index) => adaptDbCameraLogToCameraLog(row, index))
+        .sort((left, right) => right.timeInIso.localeCompare(left.timeInIso));
+    }
+  } catch {
+    // Fallback to dashboard rows when DB query is unavailable.
+  }
+
   const dashboard = await fetchEnterpriseDashboard(enterpriseId);
   const rows = dashboard.detailed_detection_rows || [];
-
-  const filteredRows = month
-    ? rows.filter((row) => row.date.startsWith(month))
-    : rows;
+  const filteredRows = month ? rows.filter((row) => row.date.startsWith(month)) : rows;
 
   return filteredRows
     .map((row, index) => adaptDetailedRowToCameraLog(row, index))
     .sort((left, right) => right.timeInIso.localeCompare(left.timeInIso));
+};
+
+export const fetchCameraMonitoringEvents = async (
+  enterpriseId: string,
+  month = getCurrentMonth(),
+  limit = 24,
+): Promise<CameraMonitoringLayoutData['events']> => {
+  try {
+    const response = await http.get<RecentDetectionFeedEvent[]>('/detections/recent', {
+      params: {
+        enterprise_id: enterpriseId,
+        month,
+        limit,
+      },
+    });
+
+    return (response.data || [])
+      .sort((left, right) => right.time_iso.localeCompare(left.time_iso))
+      .map((event) => ({
+        id: event.id,
+        timeLabel: formatDateTime(event.time_iso),
+        frame: event.frame,
+        details: event.details,
+      }));
+  } catch {
+    return [];
+  }
 };
 
 export const submitMonthlyReport = async (
@@ -487,41 +543,9 @@ export const submitMonthlyReport = async (
       message: response.data.message,
     };
 
-    const enterpriseName = localStorage.getItem(LEGACY_ENTERPRISE_NAME_KEY) || 'Enterprise Account';
-    upsertSubmissionRecord(
-      buildSubmissionRecordFromLogs({
-        reportId: result.reportId,
-        enterpriseId,
-        enterpriseName,
-        month,
-        status: result.status,
-        logs,
-      }),
-    );
-
     return result;
   } catch (error) {
-    const fallbackReportId = `rpt_${enterpriseId}_${month.replace('-', '_')}_${Date.now()}`;
-    const enterpriseName = localStorage.getItem(LEGACY_ENTERPRISE_NAME_KEY) || 'Enterprise Account';
-
-    upsertSubmissionRecord(
-      buildSubmissionRecordFromLogs({
-        reportId: fallbackReportId,
-        enterpriseId,
-        enterpriseName,
-        month,
-        status: 'SUBMITTED',
-        logs,
-      }),
-    );
-
-    toAppError(error, 'Backend unavailable. Submission was stored locally for LGU portal sync.');
-
-    return {
-      reportId: fallbackReportId,
-      status: 'SUBMITTED',
-      message: 'Backend unavailable. Report was saved locally and synced to LGU portal.',
-    };
+    throw toAppError(error, 'Unable to submit report. Please retry.');
   }
 };
 
@@ -538,8 +562,8 @@ export const fetchArchivedReports = async (enterpriseId: string): Promise<Archiv
       status: report.audit?.reporting_window_status_at_submit || 'Submitted',
       submittedBy: report.submitted_by_user_id || 'Enterprise User',
     }));
-  } catch {
-    return [];
+  } catch (error) {
+    throw toAppError(error, 'Unable to load archived reports.');
   }
 };
 
@@ -680,17 +704,20 @@ export const fetchCameraMonitoringLayoutData = async (
   enterpriseId: string,
   month = getCurrentMonth(),
 ): Promise<CameraMonitoringLayoutData> => {
-  const [stream, logs] = await Promise.all([
+  const [stream, logs, recentEvents] = await Promise.all([
     fetchCameraStream(enterpriseId),
     fetchCameraLogs(enterpriseId, month),
+    fetchCameraMonitoringEvents(enterpriseId, month, 24),
   ]);
 
-  const eventRows = logs.slice(0, 24).map((log, index) => ({
-    id: `${log.id}-${index}`,
-    timeLabel: log.timeIn,
-    frame: Math.max(1, stream.frame - index),
-    details: `${log.maleCount} Male ${log.classification}, ${log.femaleCount} Female ${log.classification === 'Tourist' ? 'Tourist' : 'Local Resident'}`,
-  }));
+  const eventRows = recentEvents.length > 0
+    ? recentEvents
+    : logs.slice(0, 24).map((log, index) => ({
+      id: `${log.id}-${index}`,
+      timeLabel: log.timeIn,
+      frame: Math.max(1, stream.frame - index),
+      details: `${log.maleCount} Male ${log.classification}, ${log.femaleCount} Female ${log.classification === 'Tourist' ? 'Tourist' : 'Local Resident'}`,
+    }));
 
   const breakdownMap = new Map<string, number>();
   stream.boxes.forEach((box) => {
@@ -795,8 +822,7 @@ export const fetchEnterpriseAccountSettings = async (
   enterpriseId: string,
   businessPermit: string,
 ): Promise<EnterpriseAccountSettingsPayload> => {
-  const fallback = readCachedAccountSettings(enterpriseId)
-    ?? createDefaultAccountSettings(enterpriseId, businessPermit);
+  const fallback = createDefaultAccountSettings(enterpriseId, businessPermit);
 
   try {
     const response = await http.get<{
@@ -820,12 +846,9 @@ export const fetchEnterpriseAccountSettings = async (
         themePreference: response.data.preferences?.themePreference || fallback.preferences.themePreference,
       },
     };
-
-    cacheAccountSettings(enterpriseId, payload);
     return payload;
-  } catch {
-    cacheAccountSettings(enterpriseId, fallback);
-    return fallback;
+  } catch (error) {
+    throw toAppError(error, 'Unable to load account settings.');
   }
 };
 
@@ -838,20 +861,16 @@ export const saveEnterpriseAccountProfile = async (
       enterprise_id: enterpriseId,
       profile,
     });
-  } catch {
-    // Fallback to frontend-local persistence.
+    return {
+      success: true,
+      message: 'Profile settings saved successfully.',
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: toAppError(error, 'Unable to save profile settings.').message,
+    };
   }
-
-  const existing = readCachedAccountSettings(enterpriseId) ?? createDefaultAccountSettings(enterpriseId, profile.businessPermit);
-  cacheAccountSettings(enterpriseId, {
-    ...existing,
-    profile,
-  });
-
-  return {
-    success: true,
-    message: 'Profile settings saved successfully.',
-  };
 };
 
 export const updateEnterpriseAccountPassword = async (
@@ -883,17 +902,17 @@ export const updateEnterpriseAccountPassword = async (
       success: true,
       message: 'Password updated successfully.',
     };
-  } catch {
+  } catch (error) {
     return {
-      success: true,
-      message: 'Password updated locally. Sync will occur when backend endpoint is available.',
+      success: false,
+      message: toAppError(error, 'Unable to update password.').message,
     };
   }
 };
 
 export const saveEnterpriseSystemPreferences = async (
   enterpriseId: string,
-  businessPermit: string,
+  _businessPermit: string,
   preferences: EnterpriseSystemPreferences,
 ): Promise<ApiMutationResult> => {
   try {
@@ -901,20 +920,16 @@ export const saveEnterpriseSystemPreferences = async (
       enterprise_id: enterpriseId,
       preferences,
     });
-  } catch {
-    // Fallback to frontend-local persistence.
+    return {
+      success: true,
+      message: 'System preferences saved successfully.',
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: toAppError(error, 'Unable to save system preferences.').message,
+    };
   }
-
-  const existing = readCachedAccountSettings(enterpriseId) ?? createDefaultAccountSettings(enterpriseId, businessPermit);
-  cacheAccountSettings(enterpriseId, {
-    ...existing,
-    preferences,
-  });
-
-  return {
-    success: true,
-    message: 'System preferences saved successfully.',
-  };
 };
 
 export default http;

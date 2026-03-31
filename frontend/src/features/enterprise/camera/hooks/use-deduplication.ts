@@ -220,7 +220,10 @@ export function useDeduplication(options: DeduplicationOptions = {}) {
     try {
       // Load face embedding models if enabled
       if (config.enableFaceEmbedding) {
-        await faceEmbedding.loadModels();
+        const faceModelsLoaded = await faceEmbedding.loadModels();
+        if (!faceModelsLoaded) {
+          return false;
+        }
       }
 
       setIsInitialized(true);

@@ -13,7 +13,11 @@ from domain_exceptions import (
 def _add_cors_headers(response: JSONResponse, request: Request) -> JSONResponse:
     """Add CORS headers to error responses."""
     settings = get_settings()
-    origin = request.headers.get("origin", "")
+    origin = ""
+    for key, value in request.scope.get("headers", []):
+        if key.lower() == b"origin":
+            origin = value.decode("latin-1")
+            break
     
     # Check if origin is allowed
     allowed_origins = settings.cors_origins_list

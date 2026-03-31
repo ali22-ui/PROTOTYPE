@@ -7,9 +7,11 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 
 from app.schemas.detection import (
+    CameraLogRecord,
     DeduplicationStats,
     DetectionBatchRequest,
     DetectionBatchResponse,
+    RecentDetectionFeedEvent,
     UnifiedDetectionBatchRequest,
     UnifiedDetectionBatchResponse,
     VisitorStatistics,
@@ -95,3 +97,27 @@ async def cleanup_old_detections():
         "deleted_count": deleted_count,
         "message": f"Cleaned up {deleted_count} old detection events",
     }
+
+
+@router.get("/recent", response_model=list[RecentDetectionFeedEvent])
+async def get_recent_detection_feed(
+    enterprise_id: str = Query(..., description="Enterprise ID"),
+    month: Optional[str] = Query(None, description="Month filter (YYYY-MM)"),
+    limit: int = Query(24, ge=1, le=200, description="Maximum rows to return"),
+):
+    """
+    Return recent detection feed rows from DB for monitoring logs.
+    """
+    return detection_service.get_recent_detection_feed(enterprise_id, month, limit)
+
+
+@router.get("/camera-logs", response_model=list[CameraLogRecord])
+async def get_camera_logs(
+    enterprise_id: str = Query(..., description="Enterprise ID"),
+    month: Optional[str] = Query(None, description="Month filter (YYYY-MM)"),
+    limit: int = Query(500, ge=1, le=1000, description="Maximum rows to return"),
+):
+    """
+    Return camera log sessions sourced from DB detection events.
+    """
+    return detection_service.get_camera_log_sessions(enterprise_id, month, limit)

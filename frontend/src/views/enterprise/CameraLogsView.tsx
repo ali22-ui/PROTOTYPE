@@ -16,24 +16,45 @@ export default function CameraLogsView(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
 
-  const loadLogs = useCallback(async (): Promise<void> => {
-    setLoading(true);
-    setError(null);
+  const loadLogs = useCallback(async (options?: { resetPage?: boolean; silent?: boolean }): Promise<void> => {
+    const resetPage = options?.resetPage ?? true;
+    const silent = options?.silent ?? false;
+
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
 
     try {
       const rows = await fetchCameraLogs(user.enterpriseId, month);
       setLogs(rows);
-      setPage(1);
+      if (resetPage) {
+        setPage(1);
+      }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to load camera logs.';
-      setError(message);
+      if (!silent) {
+        const message = err instanceof Error ? err.message : 'Unable to load camera logs.';
+        setError(message);
+      }
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }, [month, user.enterpriseId]);
 
   useEffect(() => {
     void loadLogs();
+  }, [loadLogs]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      void loadLogs({ resetPage: false, silent: true });
+    }, 8000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
   }, [loadLogs]);
 
   const paginated = useMemo(() => {
@@ -74,7 +95,7 @@ export default function CameraLogsView(): JSX.Element {
 
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="min-w-full border-collapse text-sm">
+          <table className="min-w-[720px] w-full border-collapse text-sm">
             <thead className="bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-600">
               <tr>
                 <th className="px-4 py-3">Unique ID</th>
