@@ -28,7 +28,11 @@ import {
   setCameraSource,
   getCameraRelayUrl,
 } from '../api/get-camera-stream';
-import type { CameraSourceState, DetectionBatchEvent } from '../types';
+import type {
+  CameraDetectionStats,
+  CameraSourceState,
+  DetectionBatchEvent,
+} from '../types';
 
 const BATCH_INTERVAL_MS = 5000;
 const MAX_BATCH_SIZE = 50;
@@ -43,9 +47,13 @@ const SourceStatus = {
 
 interface IPCameraViewProps {
   compactLayout?: boolean;
+  onStatsChange?: (stats: CameraDetectionStats) => void;
 }
 
-export default function IPCameraView({ compactLayout = false }: IPCameraViewProps): JSX.Element {
+export default function IPCameraView({
+  compactLayout = false,
+  onStatsChange,
+}: IPCameraViewProps): JSX.Element {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
@@ -69,6 +77,7 @@ export default function IPCameraView({ compactLayout = false }: IPCameraViewProp
     femaleCount: 0,
     unknownCount: 0,
   });
+  const [totalEventCount, setTotalEventCount] = useState(0);
 
   const deduplication = useDeduplication({
     enableAppearance: true,
@@ -95,6 +104,7 @@ export default function IPCameraView({ compactLayout = false }: IPCameraViewProp
 
   const addDetectionLog = useCallback((message: string): void => {
     const timestamp = new Date().toLocaleTimeString();
+    setTotalEventCount((prev) => prev + 1);
     setDetectionLogs((prev) => [
       `[${timestamp}] ${message}`,
       ...prev.slice(0, 99),
@@ -410,7 +420,7 @@ export default function IPCameraView({ compactLayout = false }: IPCameraViewProp
     deduplication,
   ]);
 
-  const renderHealthStatus = (): JSX.Element | null => {
+  const renderHealthStatus = (forDarkSurface = false): JSX.Element | null => {
     if (!sourceState?.health) return null;
 
     const {
@@ -438,15 +448,43 @@ export default function IPCameraView({ compactLayout = false }: IPCameraViewProp
               'Offline'}
         </span>
         {latencyMs && (
-          <span className="text-xs text-slate-500">({Math.round(latencyMs)}ms)</span>
+          <span className={`text-xs ${forDarkSurface ? 'text-slate-300/80' : 'text-slate-500'}`}>
+            ({Math.round(latencyMs)}ms)
+          </span>
         )}
       </div>
     );
   };
 
+  const trackedCount = deduplication.stats.activeTracks;
+  const uniqueCount = deduplication.stats.uniquePersons;
+
+  useEffect(() => {
+    if (!onStatsChange) {
+      return;
+    }
+
+    onStatsChange({
+      fps: Number.isFinite(fps) ? Math.max(0, Math.round(fps)) : 0,
+      tracked: trackedCount,
+      male: stats.maleCount,
+      female: stats.femaleCount,
+      unique: uniqueCount,
+      totalEvents: totalEventCount,
+    });
+  }, [
+    onStatsChange,
+    fps,
+    trackedCount,
+    stats.maleCount,
+    stats.femaleCount,
+    uniqueCount,
+    totalEventCount,
+  ]);
+
   if (isLoading) {
     return (
-      <div className="flex h-96 items-center justify-center rounded-xl border border-slate-200 bg-slate-900">
+      <div className="relative flex aspect-video w-full flex-col items-center justify-center overflow-hidden rounded-lg bg-black shadow-inner">
         <div className="flex flex-col items-center gap-4 text-slate-400">
           <Loader2 size={48} className="animate-spin" />
           <p>Loading IP camera configuration...</p>
@@ -457,28 +495,29 @@ export default function IPCameraView({ compactLayout = false }: IPCameraViewProp
 
   if (!isStreaming) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-col items-center justify-center gap-6 p-12">
-          <Smartphone size={64} className="text-slate-400" />
-          <div className="text-center">
-            <h3 className="text-xl font-semibold text-slate-800">Mobile IP Camera</h3>
-            <p className="mt-2 text-slate-500">
-              Connect to your Android IP Webcam for real-time detection
+      <div className="relative flex aspect-video w-full flex-col items-center justify-center overflow-hidden rounded-lg bg-black shadow-inner">
+        <div className="z-10 flex w-full max-w-lg flex-col items-center gap-4 px-6 text-center">
+          <Smartphone size={56} className="text-slate-300" />
+
+          <div>
+            <h3 className="text-xl font-semibold text-white">Mobile IP Camera</h3>
+            <p className="mt-2 text-sm text-slate-300">
+              Connect your Android IP Webcam for real-time detection.
             </p>
           </div>
 
           {sourceState?.config && (
-            <div className="rounded-lg bg-slate-50 p-4">
-              <p className="text-sm text-slate-600">
+            <div className="w-full rounded-lg border border-slate-600 bg-slate-800/65 p-3 text-left">
+              <p className="truncate text-sm text-slate-200">
                 <span className="font-medium">Configured URL:</span>{' '}
                 {sourceState.config.ip_webcam_base_url}
               </p>
-              {renderHealthStatus()}
+              <div className="mt-2">{renderHealthStatus(true)}</div>
             </div>
           )}
 
           {streamError && (
-            <div className="flex items-center gap-2 rounded-lg bg-red-50 px-4 py-2 text-red-600">
+            <div className="flex items-center gap-2 rounded-lg border border-red-400/40 bg-red-500/15 px-4 py-2 text-red-200">
               <AlertCircle size={16} />
               <span className="text-sm">{streamError}</span>
             </div>
@@ -612,7 +651,7 @@ export default function IPCameraView({ compactLayout = false }: IPCameraViewProp
       {/* Video stream */}
       <div className={compactLayout ? 'space-y-4' : 'grid grid-cols-1 gap-4 lg:grid-cols-3 lg:items-start'}>
         <div className={compactLayout ? 'relative' : 'relative lg:col-span-2'}>
-          <div className="relative aspect-video w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-900">
+          <div className="relative flex aspect-video w-full flex-col items-center justify-center overflow-hidden rounded-lg bg-black shadow-inner">
             {/* MJPEG stream image */}
             <img
               ref={imgRef}
@@ -672,12 +711,12 @@ export default function IPCameraView({ compactLayout = false }: IPCameraViewProp
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-slate-600">Unique Persons</span>
                   <span className="font-bold text-emerald-600">
-                    {deduplication.stats.uniquePersons}
+                    {uniqueCount}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-slate-600">Total Detections</span>
-                  <span className="font-medium text-slate-700">{stats.totalDetections}</span>
+                  <span className="font-medium text-slate-700">{totalEventCount}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-slate-600">Male</span>

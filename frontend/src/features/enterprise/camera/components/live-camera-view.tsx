@@ -27,7 +27,7 @@ import { useGlobalCamera } from '../context/CameraContext';
 import { FaceEmbeddingState } from '../hooks/use-face-embedding';
 import { ReIdMethod } from '../hooks/use-identity-registry';
 import { sendDetectionBatch } from '../api/detection-api';
-import type { DetectionBatchEvent } from '../types';
+import type { CameraDetectionStats, DetectionBatchEvent } from '../types';
 import type { EnhancedTrack } from '../hooks/use-deduplication';
 
 const BATCH_INTERVAL_MS = 5000;
@@ -47,10 +47,12 @@ type OverlayDetection = EnhancedTrack & {
 
 interface LiveCameraViewProps {
   compactLayout?: boolean;
+  onStatsChange?: (stats: CameraDetectionStats) => void;
 }
 
 export default function LiveCameraView({
   compactLayout = false,
+  onStatsChange,
 }: LiveCameraViewProps): JSX.Element {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -70,6 +72,7 @@ export default function LiveCameraView({
     femaleCount: 0,
     unknownCount: 0,
   });
+  const [totalEventCount, setTotalEventCount] = useState(0);
 
   const deduplication = useDeduplication({
     enableAppearance: true,
@@ -230,6 +233,7 @@ export default function LiveCameraView({
 
   const addDetectionLog = useCallback((message: string): void => {
     const timestamp = new Date().toLocaleTimeString();
+    setTotalEventCount((prev) => prev + 1);
     setDetectionLogs((prev) => [
       `[${timestamp}] ${message}`,
       ...prev.slice(0, 99),
@@ -628,6 +632,32 @@ export default function LiveCameraView({
           ? 'Ready'
           : 'Idle';
 
+    const trackedCount = deduplication.stats.activeTracks;
+    const uniqueCount = deduplication.stats.uniquePersons;
+
+    useEffect(() => {
+      if (!onStatsChange) {
+        return;
+      }
+
+      onStatsChange({
+        fps: Number.isFinite(fps) ? Math.max(0, Math.round(fps)) : 0,
+        tracked: trackedCount,
+        male: stats.maleCount,
+        female: stats.femaleCount,
+        unique: uniqueCount,
+        totalEvents: totalEventCount,
+      });
+    }, [
+      onStatsChange,
+      fps,
+      trackedCount,
+      stats.maleCount,
+      stats.femaleCount,
+      uniqueCount,
+      totalEventCount,
+    ]);
+
   return (
     <div className="space-y-3">
       <article className="rounded-xl border border-brand-mid/70 bg-white p-3 shadow-sm">
@@ -685,10 +715,10 @@ export default function LiveCameraView({
           </div>
         </div>
 
-        <div className="mx-auto w-full max-w-lg">
+        <div className="mx-auto w-full">
           <div
             ref={previewRef}
-            className="relative aspect-square w-full overflow-hidden rounded-xl border border-brand-mid/70 bg-black"
+            className="relative flex aspect-video w-full flex-col items-center justify-center overflow-hidden rounded-lg bg-black shadow-inner"
           >
             <video
               ref={videoRef}
@@ -717,11 +747,11 @@ export default function LiveCameraView({
 
                 <div className="absolute bottom-2 left-2 flex items-center gap-2">
                   <div className="rounded-md bg-black/60 px-2 py-1 text-[10px] font-semibold text-white">
-                    {deduplication.stats.activeTracks} tracked
+                    {trackedCount} tracked
                   </div>
                   <div className="rounded-md bg-brand-dark/90 px-2 py-1 text-[10px] font-semibold text-white">
                     <UserCheck size={10} className="mr-1 inline" />
-                    {deduplication.stats.uniquePersons} unique
+                    {uniqueCount} unique
                   </div>
                 </div>
               </>
@@ -746,7 +776,7 @@ export default function LiveCameraView({
               <div className="rounded-lg border border-brand-mid/70 bg-brand-bg px-3 py-2">
                 <p className="text-xs text-brand-dark/70">Tracked</p>
                 <p className="font-bold text-brand-dark">
-                  {deduplication.stats.activeTracks}
+                  {trackedCount}
                 </p>
               </div>
               <div className="rounded-lg border border-brand-mid/70 bg-brand-bg px-3 py-2">
@@ -766,7 +796,7 @@ export default function LiveCameraView({
               <div className="rounded-lg border border-brand-mid/70 bg-brand-bg px-3 py-2">
                 <p className="text-xs text-brand-dark/70">Total Events</p>
                 <p className="font-bold text-brand-dark">
-                  {stats.totalDetections}
+                  {totalEventCount}
                 </p>
               </div>
             </div>

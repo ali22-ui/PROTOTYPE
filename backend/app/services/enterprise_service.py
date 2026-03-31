@@ -4,7 +4,7 @@ from domain_exceptions import DomainNotFoundError, DomainServiceUnavailableError
 
 from app.core.supabase import is_supabase_available
 from app.repositories import enterprise_repository
-from app.repositories.supabase_repositories import reporting_window_repo
+from app.repositories.supabase_repositories import reporting_window_repo, system_settings_repo
 
 
 def _require_supabase() -> None:
@@ -19,17 +19,27 @@ def get_enterprise_profile(enterprise_id: str):
     if not profile:
         raise DomainNotFoundError("Enterprise profile not found")
 
-    window = reporting_window_repo.get_by_enterprise_current(enterprise_id)
-    if not window:
-        window = reporting_window_repo.get_by_enterprise(enterprise_id)
-    
-    if not window:
-        # Default to closed if no window found
-        window = {"status": "CLOSED"}
+    window = None
+    try:
+        window = reporting_window_repo.get_by_enterprise_current(enterprise_id)
+        if not window:
+            window = reporting_window_repo.get_by_enterprise(enterprise_id)
+    except Exception:
+        window = None
+
+    global_state = system_settings_repo.get_reporting_window_state()
+    is_global_open = bool(global_state.get("is_reporting_window_open", False))
+
+    status = window.get("status") if window else None
+    if not isinstance(status, str) or not status.strip():
+        status = "OPEN" if is_global_open else "CLOSED"
+
+    if status != "SUBMITTED":
+        status = "OPEN" if is_global_open else "CLOSED"
 
     return {
         **profile,
-        "reporting_window_status": window.get("status", "CLOSED"),
+        "reporting_window_status": status,
     }
 
 
@@ -66,11 +76,38 @@ def get_reporting_window_status(enterprise_id: str = "ent_archies_001"):
     _require_supabase()
 
     current_period = datetime.now().strftime("%Y-%m")
-    window = reporting_window_repo.get_by_enterprise(enterprise_id, current_period)
-    if not window:
-        window = reporting_window_repo.get_by_enterprise(enterprise_id)
+    window = None
+    try:
+        window = reporting_window_repo.get_by_enterprise(enterprise_id, current_period)
+        if not window:
+            window = reporting_window_repo.get_by_enterprise(enterprise_id)
+    except Exception:
+        window = None
+
+    global_state = system_settings_repo.get_reporting_window_state()
+    is_global_open = bool(global_state.get("is_reporting_window_open", False))
 
     if not window:
-        raise DomainNotFoundError("Enterprise reporting window not found")
+        status = "OPEN" if is_global_open else "CLOSED"
+        return {
+            "enterprise_id": enterprise_id,
+            "period": current_period,
+            "status": status,
+            "is_reporting_window_open": is_global_open,
+            "updated_at": global_state.get("updated_at"),
+            "updated_by": global_state.get("updated_by"),
+            "message": "Reporting window is open." if is_global_open else "Reporting window is currently closed.",
+        }
 
-    return window
+    status = window.get("status", "CLOSED")
+    if status != "SUBMITTED":
+        status = "OPEN" if is_global_open else "CLOSED"
+
+    return {
+        **window,
+        "status": status,
+        "is_reporting_window_open": is_global_open,
+        "updated_at": global_state.get("updated_at"),
+        "updated_by": global_state.get("updated_by"),
+        "message": "Reporting window is open." if status == "OPEN" else "Reporting window is currently closed.",
+    }

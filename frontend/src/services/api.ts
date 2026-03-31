@@ -62,6 +62,36 @@ const WEEKDAY_LABELS: DashboardWeeklyAreaPoint['day'][] = [
   'Sat',
 ];
 
+const REPORTING_WINDOW_STATUS_ENDPOINTS = [
+  '/enterprise/reports/lgu-notification-status',
+  '/enterprise/lgu/notification-status',
+  '/enterprise/reports/request-status',
+] as const;
+const REPORTING_WINDOW_SETTING_ENDPOINT = '/lgu/settings/is_reporting_window_open';
+
+const OPEN_REPORTING_STATUSES = new Set(['OPEN', 'REMIND', 'WARN', 'RENOTIFY']);
+
+interface ReportingWindowStatusCandidatePayload {
+  hasLguRequestedReports?: boolean;
+  has_lgu_requested_reports?: boolean;
+  requestedAt?: string | null;
+  requested_at?: string | null;
+  message?: string;
+}
+
+export interface EnterpriseReportingWindowState {
+  status: string;
+  isOpen: boolean;
+  message: string;
+  requestedAt?: string | null;
+}
+
+export interface GlobalReportingWindowSettingState {
+  isOpen: boolean;
+  updatedAt?: string | null;
+  updatedBy?: string | null;
+}
+
 const http = axios.create({
   baseURL: `${API_BASE_URL}/api`,
   timeout: 15000,
@@ -158,6 +188,54 @@ const toAppError = (error: unknown, fallback = 'Something went wrong.'): Error =
   const statusText = axiosError.response?.statusText;
 
   return new Error(detail || message || statusText || fallback);
+};
+
+const toReportingWindowStateFromCandidate = (
+  payload: ReportingWindowStatusCandidatePayload | null | undefined,
+): EnterpriseReportingWindowState | null => {
+  if (!payload) {
+    return null;
+  }
+
+  const openFlag = payload.hasLguRequestedReports ?? payload.has_lgu_requested_reports;
+  if (typeof openFlag !== 'boolean') {
+    return null;
+  }
+
+  return {
+    status: openFlag ? 'OPEN' : 'CLOSED',
+    isOpen: openFlag,
+    message: payload.message || (openFlag ? 'Reporting window is open.' : 'Reporting window is currently closed.'),
+    requestedAt: payload.requestedAt ?? payload.requested_at ?? null,
+  };
+};
+
+const normalizeReportingWindowStatus = (rawStatus: string | null | undefined): string => {
+  const status = String(rawStatus || 'CLOSED').trim().toUpperCase();
+  return status || 'CLOSED';
+};
+
+const parseBooleanSetting = (value: unknown): boolean | null => {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (typeof value === 'number') {
+    return value !== 0;
+  }
+
+  if (typeof value === 'string') {
+    const normalizedValue = value.trim().toLowerCase();
+    if (['1', 'true', 'yes', 'on', 'open'].includes(normalizedValue)) {
+      return true;
+    }
+
+    if (['0', 'false', 'no', 'off', 'close', 'closed'].includes(normalizedValue)) {
+      return false;
+    }
+  }
+
+  return null;
 };
 
 export const createClientSessionToken = (): string => {
@@ -491,6 +569,85 @@ export const fetchCameraLogs = async (enterpriseId: string, month?: string): Pro
     .sort((left, right) => right.timeInIso.localeCompare(left.timeInIso));
 };
 
+export const fetchGlobalReportingWindowSetting = async (): Promise<GlobalReportingWindowSettingState> => {
+  const response = await http.get<{
+    value?: unknown;
+    setting?: {
+      setting_value?: unknown;
+      is_reporting_window_open?: unknown;
+      updated_at?: string;
+      updated_by?: string;
+    };
+  }>(REPORTING_WINDOW_SETTING_ENDPOINT);
+
+  const payload = response.data;
+  const isOpen =
+    parseBooleanSetting(payload.value)
+    ?? parseBooleanSetting(payload.setting?.setting_value)
+    ?? parseBooleanSetting(payload.setting?.is_reporting_window_open)
+    ?? false;
+
+  return {
+    isOpen,
+    updatedAt: payload.setting?.updated_at ?? null,
+    updatedBy: payload.setting?.updated_by ?? null,
+  };
+};
+
+export const fetchEnterpriseReportingWindowState = async (
+  enterpriseId: string,
+  month = getCurrentMonth(),
+): Promise<EnterpriseReportingWindowState> => {
+  const safeEnterpriseId = sanitizeForTransport(enterpriseId);
+  const safeMonth = sanitizeForTransport(month);
+
+  for (const endpoint of REPORTING_WINDOW_STATUS_ENDPOINTS) {
+    try {
+      const response = await http.get<ReportingWindowStatusCandidatePayload>(endpoint, {
+        params: {
+          enterprise_id: safeEnterpriseId,
+          month: safeMonth,
+        },
+      });
+
+      const parsed = toReportingWindowStateFromCandidate(response.data);
+      if (parsed) {
+        return parsed;
+      }
+    } catch {
+      // try the next endpoint
+    }
+  }
+
+  try {
+    const profileResponse = await http.get<{ reporting_window_status?: string }>('/enterprise/profile', {
+      params: {
+        enterprise_id: safeEnterpriseId,
+      },
+    });
+
+    const normalizedStatus = normalizeReportingWindowStatus(profileResponse.data.reporting_window_status);
+    const isOpen = OPEN_REPORTING_STATUSES.has(normalizedStatus);
+
+    return {
+      status: normalizedStatus,
+      isOpen,
+      message:
+        normalizedStatus === 'SUBMITTED'
+          ? 'Monthly report already submitted for this reporting window.'
+          : isOpen
+            ? 'Reporting window is open.'
+            : 'Reporting window is currently closed.',
+    };
+  } catch {
+    return {
+      status: 'CLOSED',
+      isOpen: false,
+      message: 'Reporting window is currently closed.',
+    };
+  }
+};
+
 export const fetchCameraMonitoringEvents = async (
   enterpriseId: string,
   month = getCurrentMonth(),
@@ -663,7 +820,7 @@ export const fetchDashboardLayoutData = async (
   const peakDate = resolvePeakDate(dashboard.detailed_detection_rows);
   const peakDateObj = new Date(`${peakDate}T00:00:00`);
   const peakDayLabel = Number.isNaN(peakDateObj.valueOf())
-    ? 'N/A'
+    ? null
     : `${new Intl.DateTimeFormat('en-PH', { month: 'long' }).format(peakDateObj)}-${new Intl.DateTimeFormat('en-PH', { weekday: 'long' }).format(peakDateObj)}`;
 
   let statusRaw = 'OPEN';
@@ -683,20 +840,30 @@ export const fetchDashboardLayoutData = async (
         ? 'ongoing'
         : 'closed';
 
+  const hasWeeklyData = weeklyDemographicSeries.some(
+    (point) => point.male > 0 || point.female > 0 || point.visitors > 0 || point.tourist > 0
+  );
+  const hasHourlyData = hourlyDemographicSeries.some(
+    (point) => point.male > 0 || point.female > 0 || point.visitor > 0 || point.tourist > 0
+  );
+  const hasResidenceData = residenceMixDistribution.some((row) => row.value > 0);
+  const hasData = totalVisitors > 0 || hasWeeklyData || hasHourlyData || hasResidenceData;
+
   return {
     title: dashboard.header.company_name,
     timestampLabel: dashboard.header.datetime_label,
     metrics: {
       averageVisitCountMtd,
       trendPercentage: dashboard.key_stats.total_visitors_mtd_trend_pct,
-      peakDayLabel,
-      peakTimeRange: dashboard.key_stats.peak_visitor_hours[0] || 'N/A',
+      peakDayLabel: peakDayLabel ?? 'Insufficient Data',
+      peakTimeRange: dashboard.key_stats.peak_visitor_hours[0] || '',
       reportMonthLabel: formatMonthLabel(month),
       reportStatus,
     },
     weeklyDemographicSeries,
     hourlyDemographicSeries,
     residenceMixDistribution,
+    hasData,
   };
 };
 

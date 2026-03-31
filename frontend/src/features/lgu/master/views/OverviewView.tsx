@@ -14,92 +14,57 @@ import {
 import {
   fetchLguLogs,
   fetchLguOverview,
-  fetchLguReportsDashboard,
 } from '@/features/lgu/master/api/apiService';
 import type {
   LguLogEntry,
   LguOverviewResponse,
-  LguReportsDashboardResponse,
 } from '@/types';
 
-interface ForecastRow {
+interface CalendarDay {
   isoDate: string;
   dayNumber: number;
   weekdayLabel: string;
-  visitors: number;
-  tourists: number;
-  isWeekend: boolean;
-  isHoliday: boolean;
-  isPeak: boolean;
 }
 
 const weekdayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const holidaySet = new Set<string>(['01-01', '04-09', '06-12', '08-21', '11-30', '12-25', '12-30']);
 const piePalette = ['#5C6F2B', '#DE802B', '#D8C9A7', '#1F2937'];
 
 const toIsoDate = (year: number, month: number, day: number): string =>
   `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
-const buildForecastRows = (
-  monthCursor: Date,
-  baseVisitors: number,
-  baseTourists: number,
-): ForecastRow[] => {
+const toMonthString = (date: Date): string =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+
+const buildCalendarDays = (monthCursor: Date): CalendarDay[] => {
   const year = monthCursor.getFullYear();
   const month = monthCursor.getMonth();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const weekdayFactors = [0.95, 0.9, 0.96, 1, 1.06, 1.17, 1.14];
 
-  const baselineVisitors = Math.max(120, Math.round(baseVisitors * 0.21));
-  const baselineTourists = Math.max(40, Math.round(baseTourists * 0.23));
-
-  const rows = Array.from({ length: daysInMonth }, (_, index) => {
+  return Array.from({ length: daysInMonth }, (_, index) => {
     const day = index + 1;
     const date = new Date(year, month, day);
     const dayOfWeek = date.getDay();
-    const monthDayKey = `${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    const isHoliday = holidaySet.has(monthDayKey);
-    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-    const weatherSwing = 0.93 + ((day % 6) * 0.025);
-    const holidayBoost = isHoliday ? 1.28 : 1;
-
-    const visitors = Math.round(
-      baselineVisitors * weekdayFactors[dayOfWeek] * weatherSwing * holidayBoost,
-    );
-    const tourists = Math.round(
-      baselineTourists * (isWeekend ? 1.24 : 1.04) * weatherSwing * holidayBoost,
-    );
 
     return {
       isoDate: toIsoDate(year, month, day),
       dayNumber: day,
       weekdayLabel: weekdayLabels[dayOfWeek],
-      visitors,
-      tourists,
-      isWeekend,
-      isHoliday,
-      isPeak: false,
     };
   });
-
-  const rankedTotals = rows
-    .map((entry) => entry.visitors + entry.tourists)
-    .sort((left, right) => right - left);
-  const peakThreshold = rankedTotals[Math.floor(rankedTotals.length * 0.25)] ?? rankedTotals[0] ?? 0;
-
-  return rows.map((entry) => ({
-    ...entry,
-    isPeak: entry.visitors + entry.tourists >= peakThreshold,
-  }));
 };
 
 const formatMonthLabel = (value: Date): string =>
   new Intl.DateTimeFormat('en-PH', { month: 'long', year: 'numeric' }).format(value);
 
+const ChartAwaitingState = (): JSX.Element => (
+  <div className="flex h-full items-center justify-center text-brand-mid italic text-sm">
+    Awaiting enterprise submissions...
+  </div>
+);
+
 export default function OverviewView(): JSX.Element {
   const [overview, setOverview] = useState<LguOverviewResponse | null>(null);
   const [logs, setLogs] = useState<LguLogEntry[]>([]);
-  const [reportsDashboard, setReportsDashboard] = useState<LguReportsDashboardResponse | null>(null);
   const [monthCursor, setMonthCursor] = useState<Date>(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -108,84 +73,53 @@ export default function OverviewView(): JSX.Element {
 
   useEffect(() => {
     const loadOverview = async (): Promise<void> => {
-      const [overviewPayload, logsPayload, reportsPayload] = await Promise.all([
-        fetchLguOverview(),
+      const targetMonth = toMonthString(monthCursor);
+      const [overviewPayload, logsPayload] = await Promise.all([
+        fetchLguOverview(targetMonth),
         fetchLguLogs(),
-        fetchLguReportsDashboard(),
       ]);
 
       setOverview(overviewPayload);
       setLogs(logsPayload.logs);
-      setReportsDashboard(reportsPayload);
     };
 
     void loadOverview().catch((error: unknown) => {
       console.error('Failed to load LGU overview datasets:', error);
     });
-  }, []);
+  }, [monthCursor]);
 
-  const forecastRows = useMemo<ForecastRow[]>(() => {
-    if (!overview) {
-      return [];
-    }
+  const calendarDays = useMemo<CalendarDay[]>(() => buildCalendarDays(monthCursor), [monthCursor]);
 
-    return buildForecastRows(
-      monthCursor,
-      overview.metrics.totalVisitors,
-      overview.metrics.totalTourists,
-    );
-  }, [monthCursor, overview]);
+  const trendData = useMemo<Array<{ dayNumber: number; visitors: number; tourists: number }>>(
+    () => [],
+    [],
+  );
+
+  const visitorTouristPie = useMemo<Array<{ name: string; value: number }>>(
+    () => [],
+    [],
+  );
+
+  const foreignLocalPie = useMemo<Array<{ name: string; value: number }>>(
+    () => [],
+    [],
+  );
+
+  const selectedDateData = useMemo<null>(() => null, [selectedIsoDate]);
 
   useEffect(() => {
-    if (!forecastRows.length) {
+    if (!calendarDays.length) {
       return;
     }
 
-    if (!selectedIsoDate || !forecastRows.some((row) => row.isoDate === selectedIsoDate)) {
-      setSelectedIsoDate(forecastRows[0].isoDate);
+    if (!selectedIsoDate || !calendarDays.some((day) => day.isoDate === selectedIsoDate)) {
+      setSelectedIsoDate(calendarDays[0].isoDate);
     }
-  }, [forecastRows, selectedIsoDate]);
+  }, [calendarDays, selectedIsoDate]);
 
-  const selectedForecast = useMemo<ForecastRow | null>(() => {
-    return forecastRows.find((row) => row.isoDate === selectedIsoDate) ?? forecastRows[0] ?? null;
-  }, [forecastRows, selectedIsoDate]);
-
-  const visitorTouristPie = useMemo(
-    () => [
-      { name: 'Visitors', value: overview?.metrics.totalVisitors ?? 0 },
-      { name: 'Tourists', value: overview?.metrics.totalTourists ?? 0 },
-    ],
-    [overview?.metrics.totalTourists, overview?.metrics.totalVisitors],
-  );
-
-  const foreignLocalPie = useMemo(() => {
-    const demographics = reportsDashboard?.quarterlyVisitorDemographics ?? [];
-    const local = demographics
-      .filter((item) => item.name.toLowerCase().includes('resident'))
-      .reduce((sum, item) => sum + item.value, 0);
-    const foreign = demographics
-      .filter((item) => {
-        const normalized = item.name.toLowerCase();
-        return normalized.includes('tourist') || normalized.includes('foreign');
-      })
-      .reduce((sum, item) => sum + item.value, 0);
-
-    if (local + foreign > 0) {
-      return [
-        { name: 'Local', value: local },
-        { name: 'Foreign/Tourist', value: foreign },
-      ];
-    }
-
-    const visitors = overview?.metrics.totalVisitors ?? 0;
-    const tourists = overview?.metrics.totalTourists ?? 0;
-    const localFallback = Math.max(visitors - tourists, 0);
-
-    return [
-      { name: 'Local', value: localFallback },
-      { name: 'Foreign/Tourist', value: tourists },
-    ];
-  }, [overview?.metrics.totalTourists, overview?.metrics.totalVisitors, reportsDashboard?.quarterlyVisitorDemographics]);
+  const selectedCalendarDay = useMemo<CalendarDay | null>(() => {
+    return calendarDays.find((day) => day.isoDate === selectedIsoDate) ?? calendarDays[0] ?? null;
+  }, [calendarDays, selectedIsoDate]);
 
   const calendarPrefix = useMemo<number>(() => {
     const year = monthCursor.getFullYear();
@@ -209,7 +143,7 @@ export default function OverviewView(): JSX.Element {
             <div>
               <h3 className="text-base font-bold text-brand-dark">Forecast Calendar</h3>
               <p className="text-sm text-slate-700">
-                Holiday/weekend-aware assumptions for all connected enterprises.
+                Calendar date grid is ready. Forecast analytics will appear after real submissions are ingested.
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -249,65 +183,55 @@ export default function OverviewView(): JSX.Element {
             {Array.from({ length: calendarPrefix }, (_, index) => (
               <div key={`blank-${index}`} className="h-11 rounded-lg bg-slate-100/90" />
             ))}
-            {forecastRows.map((row) => {
-              const isSelected = row.isoDate === selectedIsoDate;
+            {calendarDays.map((day) => {
+              const isSelected = day.isoDate === selectedIsoDate;
 
               return (
                 <button
-                  key={row.isoDate}
+                  key={day.isoDate}
                   type="button"
-                  onClick={() => setSelectedIsoDate(row.isoDate)}
+                  onClick={() => setSelectedIsoDate(day.isoDate)}
                   className={`h-11 rounded-lg border p-1 text-left text-[11px] transition ${
                     isSelected
-                      ? 'border-brand-dark bg-brand-mid/25'
-                      : row.isPeak
-                        ? 'border-brand-dark/40 bg-brand-mid/30 hover:bg-brand-mid/45'
-                        : row.isHoliday
-                          ? 'border-amber-300 bg-amber-50 hover:bg-amber-100'
-                          : 'border-slate-300 bg-slate-100 hover:bg-slate-200'
+                      ? 'border-brand-accent bg-[#DE802B] text-white'
+                      : 'border-slate-300 bg-slate-100 hover:bg-slate-200 hover:border-brand-accent'
                   }`}
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-brand-dark">{row.dayNumber}</span>
-                    {row.isPeak ? <span className="text-[10px] font-bold text-brand-accent">Peak</span> : null}
+                  <div className="flex items-start justify-start">
+                    <span className={`font-semibold ${isSelected ? 'text-white' : 'text-brand-dark'}`}>
+                      {day.dayNumber}
+                    </span>
                   </div>
-                  <p className="truncate text-[10px] text-slate-700">
-                    {(row.visitors + row.tourists).toLocaleString()} projected
-                  </p>
                 </button>
               );
             })}
           </div>
 
-          {selectedForecast ? (
+          {selectedCalendarDay ? (
             <div className="rounded-xl border border-brand-light/70 bg-brand-bg p-2.5 text-sm text-slate-800">
               <p className="font-semibold text-brand-dark">
-                {selectedForecast.isoDate} ({selectedForecast.weekdayLabel})
+                {selectedCalendarDay.isoDate} ({selectedCalendarDay.weekdayLabel})
               </p>
-              <p className="mt-1">
-                Visitors: <strong>{selectedForecast.visitors.toLocaleString()}</strong> · Tourists:{' '}
-                <strong>{selectedForecast.tourists.toLocaleString()}</strong>
-              </p>
-              <p className="mt-1 text-xs text-slate-700">
-                {selectedForecast.isHoliday ? 'Holiday uplift applied. ' : ''}
-                {selectedForecast.isWeekend ? 'Weekend uplift applied. ' : 'Weekday baseline applied. '}
-                {selectedForecast.isPeak ? 'Classified as peak assumption date.' : 'Normal assumption day.'}
-              </p>
+              {!selectedDateData ? <p className="mt-1 text-brand-mid italic">No forecast data available for this date.</p> : null}
             </div>
           ) : null}
 
           <div className="h-44 rounded-xl border border-brand-light/70 bg-white p-2.5">
             <p className="mb-1 text-sm font-semibold text-brand-dark">Visitor vs Tourist Forecast Trend</p>
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={forecastRows}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="dayNumber" />
-                <YAxis />
-                <Tooltip />
-                <Area type="monotone" dataKey="visitors" stroke="#5C6F2B" fill="#D8C9A7" fillOpacity={0.36} />
-                <Area type="monotone" dataKey="tourists" stroke="#DE802B" fill="#DE802B" fillOpacity={0.2} />
-              </AreaChart>
-            </ResponsiveContainer>
+            {trendData.length === 0 ? (
+              <ChartAwaitingState />
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={trendData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="dayNumber" />
+                  <YAxis />
+                  <Tooltip />
+                  <Area type="monotone" dataKey="visitors" stroke="#5C6F2B" fill="#D8C9A7" fillOpacity={0.36} />
+                  <Area type="monotone" dataKey="tourists" stroke="#DE802B" fill="#DE802B" fillOpacity={0.2} />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </article>
 
@@ -317,32 +241,40 @@ export default function OverviewView(): JSX.Element {
             <div className="mt-2 grid gap-3 sm:grid-cols-2">
               <div className="flex flex-col items-center">
                 <div className="h-40 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={visitorTouristPie} dataKey="value" nameKey="name" outerRadius={62}>
-                        {visitorTouristPie.map((entry, index) => (
-                          <Cell key={entry.name} fill={piePalette[index % piePalette.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
+                  {visitorTouristPie.length === 0 ? (
+                    <ChartAwaitingState />
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={visitorTouristPie} dataKey="value" nameKey="name" outerRadius={62}>
+                          {visitorTouristPie.map((entry, index) => (
+                            <Cell key={entry.name} fill={piePalette[index % piePalette.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  )}
                 </div>
                 <p className="mt-1 text-center text-sm font-semibold text-brand-dark">Visitor vs Tourist</p>
               </div>
 
               <div className="flex flex-col items-center">
                 <div className="h-40 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={foreignLocalPie} dataKey="value" nameKey="name" outerRadius={62}>
-                        {foreignLocalPie.map((entry, index) => (
-                          <Cell key={entry.name} fill={piePalette[(index + 1) % piePalette.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
+                  {foreignLocalPie.length === 0 ? (
+                    <ChartAwaitingState />
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={foreignLocalPie} dataKey="value" nameKey="name" outerRadius={62}>
+                          {foreignLocalPie.map((entry, index) => (
+                            <Cell key={entry.name} fill={piePalette[(index + 1) % piePalette.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  )}
                 </div>
                 <p className="mt-1 text-center text-sm font-semibold text-brand-dark">Foreign vs Local Demographics</p>
               </div>

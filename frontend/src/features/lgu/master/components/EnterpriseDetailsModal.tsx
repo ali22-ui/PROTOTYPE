@@ -1,19 +1,13 @@
 import { useEffect } from 'react';
-import type { LguEnterpriseAnalyticsDetail, LguEnterpriseNode } from '@/types';
+import type { EnterpriseMapNode } from '@/types';
 
 interface EnterpriseDetailsModalProps {
-  enterprise: LguEnterpriseNode | null;
-  analytics: LguEnterpriseAnalyticsDetail | null;
+  enterprise: EnterpriseMapNode | null;
   onClose: () => void;
-}
-
-function toComplianceStatus(status: string): 'Active' | 'Needs Renewal' {
-  return status.toLowerCase() === 'active' ? 'Active' : 'Needs Renewal';
 }
 
 export default function EnterpriseDetailsModal({
   enterprise,
-  analytics,
   onClose,
 }: EnterpriseDetailsModalProps): JSX.Element | null {
   useEffect(() => {
@@ -42,7 +36,8 @@ export default function EnterpriseDetailsModal({
     return null;
   }
 
-  const complianceStatus = toComplianceStatus(enterprise.status);
+  const complianceStatus = enterprise.status;
+  const stats = enterprise.currentMonthStats ?? null;
 
   return (
     <div
@@ -69,7 +64,7 @@ export default function EnterpriseDetailsModal({
               {enterprise.name}
             </h3>
             <p className="mt-1 text-sm text-brand-cream/90">
-              {enterprise.type} • {enterprise.barangay}
+              {enterprise.category} • {enterprise.barangay}
             </p>
           </div>
           <button
@@ -82,58 +77,60 @@ export default function EnterpriseDetailsModal({
         </header>
 
         <div className="grid gap-3 bg-brand-cream p-4 sm:grid-cols-2">
-          <article className="rounded-xl border border-brand-mid/55 bg-white p-3">
-            <p className="text-xs uppercase tracking-wide text-slate-500">
-              Total Visitors
-            </p>
-            <p className="mt-1 text-xl font-bold text-brand-dark">
-              {analytics
-                ? analytics.monthlyVisitors.toLocaleString()
-                : 'Loading...'}
-            </p>
-          </article>
+          {stats ? (
+            <>
+              <article className="rounded-xl border border-brand-mid/55 bg-white p-3">
+                <p className="text-xs uppercase tracking-wide text-slate-500">
+                  Total Visitors
+                </p>
+                <p className="mt-1 text-xl font-bold text-brand-dark">
+                  {stats.visitors.toLocaleString()}
+                </p>
+              </article>
 
-          <article className="rounded-xl border border-brand-mid/55 bg-white p-3">
-            <p className="text-xs uppercase tracking-wide text-slate-500">
-              Top Segment
-            </p>
-            <p className="mt-1 text-xl font-bold text-brand-dark">
-              {analytics?.topDemographic ?? 'Loading...'}
-            </p>
-          </article>
+              <article className="rounded-xl border border-brand-mid/55 bg-white p-3">
+                <p className="text-xs uppercase tracking-wide text-slate-500">
+                  Top Segment
+                </p>
+                <p className="mt-1 text-xl font-bold text-brand-dark">
+                  {stats.topSegment}
+                </p>
+              </article>
 
-          <article className="rounded-xl border border-brand-mid/55 bg-white p-3">
-            <p className="text-xs uppercase tracking-wide text-slate-500">
-              Local vs Non-Local
-            </p>
-            <p className="mt-1 text-lg font-bold text-brand-dark">
-              {analytics
-                ? `${analytics.localResidents.toLocaleString()} / ${analytics.nonLocalResidents.toLocaleString()}`
-                : 'Loading...'}
-            </p>
-          </article>
+              <article className="rounded-xl border border-brand-mid/55 bg-white p-3">
+                <p className="text-xs uppercase tracking-wide text-slate-500">
+                  Local vs Non-Local
+                </p>
+                <p className="mt-1 text-lg font-bold text-brand-dark">
+                  {`${stats.localResidents.toLocaleString()} / ${stats.nonLocalResidents.toLocaleString()}`}
+                </p>
+              </article>
 
-          <article className="rounded-xl border border-brand-mid/55 bg-white p-3">
-            <p className="text-xs uppercase tracking-wide text-slate-500">
-              Male / Female Ratio
-            </p>
-            <p className="mt-1 text-lg font-bold text-brand-dark">
-              {analytics
-                ? `${analytics.maleRatioPct}% / ${analytics.femaleRatioPct}%`
-                : 'Loading...'}
-            </p>
-          </article>
+              <article className="rounded-xl border border-brand-mid/55 bg-white p-3">
+                <p className="text-xs uppercase tracking-wide text-slate-500">
+                  Male / Female Ratio
+                </p>
+                <p className="mt-1 text-lg font-bold text-brand-dark">
+                  {`${stats.maleRatioPct}% / ${stats.femaleRatioPct}%`}
+                </p>
+              </article>
 
-          <article className="rounded-xl border border-brand-mid/55 bg-white p-3">
-            <p className="text-xs uppercase tracking-wide text-slate-500">
-              Total Tourists
-            </p>
-            <p className="mt-1 text-xl font-bold text-brand-dark">
-              {analytics
-                ? analytics.totalTourists.toLocaleString()
-                : 'Loading...'}
-            </p>
-          </article>
+              <article className="rounded-xl border border-brand-mid/55 bg-white p-3">
+                <p className="text-xs uppercase tracking-wide text-slate-500">
+                  Total Tourists
+                </p>
+                <p className="mt-1 text-xl font-bold text-brand-dark">
+                  {stats.totalTourists.toLocaleString()}
+                </p>
+              </article>
+            </>
+          ) : (
+            <article className="rounded-xl border border-brand-mid/55 bg-white p-3 sm:col-span-2">
+              <p className="text-sm text-brand-mid/80 italic py-4 text-center">
+                Awaiting enterprise submission data
+              </p>
+            </article>
+          )}
 
           <article className="rounded-xl border border-brand-mid/55 bg-white p-3">
             <p className="text-xs uppercase tracking-wide text-slate-500">
@@ -152,13 +149,13 @@ export default function EnterpriseDetailsModal({
         </div>
 
         <div className="border-t border-brand-mid/45 bg-white px-4 py-3">
-          {analytics ? (
+          {stats && stats.demographics.length > 0 ? (
             <div className="rounded-xl border border-brand-mid/40 bg-brand-cream/65 p-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-brand-dark">
                 Visitor Demographics
               </p>
               <ul className="mt-2 grid gap-1 text-sm text-slate-700 sm:grid-cols-2">
-                {analytics.demographics.map((entry) => (
+                {stats.demographics.map((entry) => (
                   <li
                     key={`${enterprise.id}-${entry.name}`}
                     className="flex items-center justify-between gap-2 rounded-md bg-white px-2 py-1"
@@ -172,8 +169,8 @@ export default function EnterpriseDetailsModal({
               </ul>
             </div>
           ) : (
-            <p className="text-sm text-slate-600">
-              Loading enterprise statistics...
+            <p className="text-sm text-brand-mid/80 italic py-4 text-center">
+              Awaiting enterprise submission data
             </p>
           )}
         </div>

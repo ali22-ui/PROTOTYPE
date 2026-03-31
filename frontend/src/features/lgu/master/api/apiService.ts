@@ -6,6 +6,7 @@ import {
   toReportingWindowStatus,
 } from '@/lib/reportingStatus';
 import type {
+  LguAggregatedStats,
   LguAuthorityPackage,
   LguBarangay,
   LguBarangayEnterprisesResponse,
@@ -13,6 +14,7 @@ import type {
   LguBarangaysGeoJsonResponse,
   LguBarangaysResponse,
   LguComplianceActionType,
+  LguEnterpriseAccount,
   LguEnterpriseAccountDraft,
   LguEnterpriseAccountsResponse,
   LguEnterpriseAnalyticsDetail,
@@ -27,15 +29,22 @@ import type {
   LguLogsResponse,
   LguMutationResult,
   LguOverviewAdminResponse,
+  LguOverviewDynamicResponse,
   LguOverviewResponse,
   LguReportPack,
   LguReportPacksResponse,
   LguReportingControlStatus,
   LguReportsDashboardResponse,
   LguSettingsPayload,
+  MonthlyReportSubmission,
+  MonthlyReportSubmissionDailyData,
+  MonthlyReportSubmissionDemographics,
 } from '@/types';
 
 const DEFAULT_REPORTING_PERIOD = '2026-03';
+const REPORTING_WINDOW_OPEN_SETTING_KEY = 'is_reporting_window_open';
+
+const MONTHLY_SUBMISSIONS_STORAGE_KEY = 'lgu-monthly-report-submissions-v1';
 
 interface DownloadArtifact {
   blob: Blob;
@@ -218,40 +227,212 @@ const FALLBACK_COMPLEX_BOUNDARIES_GEOJSON: LguBarangaysGeoJsonResponse = {
   ],
 };
 
-const FALLBACK_OVERVIEW: LguOverviewResponse = {
-  city: 'San Pedro City, Laguna',
-  zip: '4023',
-  date: new Date().toDateString(),
-  metrics: {
-    totalPeopleToday: 1540,
-    totalVisitors: 820,
-    totalTourists: 320,
-    currentlyInside: 105,
-  },
-  sparkline: {
-    totalPeopleToday: [1200, 1260, 1320, 1380, 1450, 1510, 1540],
-    totalVisitors: [650, 670, 700, 740, 780, 805, 820],
-    totalTourists: [210, 225, 240, 270, 285, 300, 320],
-    currentlyInside: [80, 92, 88, 110, 115, 108, 105],
-  },
-  recentActivities: [
-    'LGU analytics feed synchronized for all enterprise nodes.',
-    'Map density model refreshed for San Pedro City 4023.',
-    'Compliance queue evaluated against monthly submissions.',
-  ],
-  peakHour: [
-    { time: '9 AM', value: 45 },
-    { time: '10 AM', value: 58 },
-    { time: '11 AM', value: 73 },
-    { time: '12 PM', value: 88 },
-    { time: '1 PM', value: 94 },
-    { time: '2 PM', value: 84 },
-    { time: '3 PM', value: 79 },
-    { time: '4 PM', value: 72 },
-    { time: '5 PM', value: 61 },
-    { time: '6 PM', value: 50 },
-  ],
+// ─────────────────────────────────────────────────────────────────────────────
+// DYNAMIC AGGREGATION ENGINE
+// ─────────────────────────────────────────────────────────────────────────────
+
+const getMonthlySubmissionsStorageKey = (month: string): string =>
+  `${MONTHLY_SUBMISSIONS_STORAGE_KEY}:${month}`;
+
+const loadMonthlySubmissions = (month: string): MonthlyReportSubmission[] => {
+  try {
+    const raw = localStorage.getItem(getMonthlySubmissionsStorageKey(month));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is MonthlyReportSubmission =>
+      typeof item === 'object' &&
+      item !== null &&
+      typeof (item as MonthlyReportSubmission).enterpriseId === 'string' &&
+      typeof (item as MonthlyReportSubmission).month === 'string'
+    );
+  } catch {
+    return [];
+  }
 };
+
+export const saveMonthlySubmission = (submission: MonthlyReportSubmission): void => {
+  const existing = loadMonthlySubmissions(submission.month);
+  const filtered = existing.filter((s) => s.enterpriseId !== submission.enterpriseId);
+  filtered.push(submission);
+  localStorage.setItem(
+    getMonthlySubmissionsStorageKey(submission.month),
+    JSON.stringify(filtered)
+  );
+};
+
+const createEmptyDemographics = (): MonthlyReportSubmissionDemographics => ({
+  male: 0,
+  female: 0,
+  local: 0,
+  nonLocal: 0,
+  foreign: 0,
+});
+
+const createEmptyAggregatedStats = (month: string): LguAggregatedStats => ({
+  month,
+  totalVisitors: 0,
+  totalTourists: 0,
+  totalPeopleToday: 0,
+  currentlyInside: 0,
+  demographics: createEmptyDemographics(),
+  dailyTrend: [],
+  enterpriseCount: 0,
+  hasData: false,
+});
+
+export const getLguOverviewStats = (month: string): LguAggregatedStats => {
+  const submissions = loadMonthlySubmissions(month);
+
+  if (submissions.length === 0) {
+    return createEmptyAggregatedStats(month);
+  }
+
+  const aggregated: LguAggregatedStats = {
+    month,
+    totalVisitors: 0,
+    totalTourists: 0,
+    totalPeopleToday: 0,
+    currentlyInside: 0,
+    demographics: createEmptyDemographics(),
+    dailyTrend: [],
+    enterpriseCount: submissions.length,
+    hasData: true,
+  };
+
+  const dailyMap = new Map<string, MonthlyReportSubmissionDailyData>();
+
+  submissions.forEach((submission) => {
+    aggregated.totalVisitors += submission.totalVisitors;
+    aggregated.totalTourists += submission.totalTourists;
+
+    aggregated.demographics.male += submission.demographics.male;
+    aggregated.demographics.female += submission.demographics.female;
+    aggregated.demographics.local += submission.demographics.local;
+    aggregated.demographics.nonLocal += submission.demographics.nonLocal;
+    aggregated.demographics.foreign += submission.demographics.foreign;
+
+    submission.dailyData.forEach((day) => {
+      const existing = dailyMap.get(day.date);
+      if (existing) {
+        existing.visitors += day.visitors;
+        existing.tourists += day.tourists;
+        existing.male += day.male;
+        existing.female += day.female;
+      } else {
+        dailyMap.set(day.date, { ...day });
+      }
+    });
+  });
+
+  aggregated.totalPeopleToday = aggregated.totalVisitors + aggregated.totalTourists;
+  aggregated.currentlyInside = Math.round(aggregated.totalPeopleToday * 0.068);
+
+  aggregated.dailyTrend = Array.from(dailyMap.values()).sort((a, b) =>
+    a.date.localeCompare(b.date)
+  );
+
+  return aggregated;
+};
+
+const buildDynamicOverviewResponse = (month: string): LguOverviewDynamicResponse => {
+  const stats = getLguOverviewStats(month);
+
+  const peakHour = stats.hasData
+    ? [
+        { time: '9 AM', value: Math.round(stats.totalVisitors * 0.055) },
+        { time: '10 AM', value: Math.round(stats.totalVisitors * 0.071) },
+        { time: '11 AM', value: Math.round(stats.totalVisitors * 0.089) },
+        { time: '12 PM', value: Math.round(stats.totalVisitors * 0.107) },
+        { time: '1 PM', value: Math.round(stats.totalVisitors * 0.115) },
+        { time: '2 PM', value: Math.round(stats.totalVisitors * 0.102) },
+        { time: '3 PM', value: Math.round(stats.totalVisitors * 0.096) },
+        { time: '4 PM', value: Math.round(stats.totalVisitors * 0.088) },
+        { time: '5 PM', value: Math.round(stats.totalVisitors * 0.074) },
+        { time: '6 PM', value: Math.round(stats.totalVisitors * 0.061) },
+      ]
+    : [];
+
+  const recentActivities = stats.hasData
+    ? [
+        `Aggregated data from ${stats.enterpriseCount} enterprise submission(s).`,
+        'LGU analytics feed synchronized for all enterprise nodes.',
+        'Map density model refreshed for San Pedro City 4023.',
+      ]
+    : [
+        'Awaiting enterprise submissions for the current reporting period.',
+        'No visitor data has been submitted yet.',
+      ];
+
+  return {
+    city: 'San Pedro City, Laguna',
+    zip: '4023',
+    date: new Date().toDateString(),
+    aggregatedStats: stats,
+    recentActivities,
+    peakHour,
+  };
+};
+
+const convertDynamicToLegacyOverview = (dynamic: LguOverviewDynamicResponse): LguOverviewResponse => {
+  const stats = dynamic.aggregatedStats;
+  const trend = stats.dailyTrend.slice(-7);
+
+  const sparklineVisitors = trend.map((d) => d.visitors);
+  const sparklineTourists = trend.map((d) => d.tourists);
+  const sparklineTotal = trend.map((d) => d.visitors + d.tourists);
+  const sparklineInside = sparklineTotal.map((v) => Math.round(v * 0.068));
+
+  const padSparkline = (arr: number[]): number[] => {
+    while (arr.length < 7) arr.unshift(0);
+    return arr;
+  };
+
+  return {
+    city: dynamic.city,
+    zip: dynamic.zip,
+    date: dynamic.date,
+    metrics: {
+      totalPeopleToday: stats.totalPeopleToday,
+      totalVisitors: stats.totalVisitors,
+      totalTourists: stats.totalTourists,
+      currentlyInside: stats.currentlyInside,
+    },
+    sparkline: {
+      totalPeopleToday: padSparkline(sparklineTotal),
+      totalVisitors: padSparkline(sparklineVisitors),
+      totalTourists: padSparkline(sparklineTourists),
+      currentlyInside: padSparkline(sparklineInside),
+    },
+    recentActivities: dynamic.recentActivities,
+    peakHour: dynamic.peakHour,
+  };
+};
+
+const buildDynamicReportsDashboard = (month: string): LguReportsDashboardResponse => {
+  const stats = getLguOverviewStats(month);
+
+  if (!stats.hasData) {
+    return {
+      quarterlyVisitorDemographics: [],
+      submittedReports: [],
+    };
+  }
+
+  return {
+    quarterlyVisitorDemographics: [
+      { name: 'Male Residents', value: Math.round(stats.demographics.male * (stats.demographics.local / Math.max(stats.demographics.local + stats.demographics.nonLocal + stats.demographics.foreign, 1))) },
+      { name: 'Female Residents', value: Math.round(stats.demographics.female * (stats.demographics.local / Math.max(stats.demographics.local + stats.demographics.nonLocal + stats.demographics.foreign, 1))) },
+      { name: 'Male Tourists', value: Math.round(stats.demographics.male * (stats.demographics.foreign / Math.max(stats.demographics.local + stats.demographics.nonLocal + stats.demographics.foreign, 1))) },
+      { name: 'Female Tourists', value: Math.round(stats.demographics.female * (stats.demographics.foreign / Math.max(stats.demographics.local + stats.demographics.nonLocal + stats.demographics.foreign, 1))) },
+    ],
+    submittedReports: [],
+  };
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FALLBACK CONSTANTS (PRESERVED: Structural/GIS data only, no hardcoded stats)
+// ─────────────────────────────────────────────────────────────────────────────
 
 const FALLBACK_LOGS: LguLogsResponse = {
   logs: [
@@ -282,26 +463,6 @@ const FALLBACK_LOGS: LguLogsResponse = {
   ],
 };
 
-const FALLBACK_REPORTS_DASHBOARD: LguReportsDashboardResponse = {
-  quarterlyVisitorDemographics: [
-    { name: 'Male Residents', value: 430 },
-    { name: 'Female Residents', value: 390 },
-    { name: 'Male Tourists', value: 170 },
-    { name: 'Female Tourists', value: 150 },
-  ],
-  submittedReports: [
-    {
-      id: 'RPT-F001',
-      business: 'San Pedro Community Hub',
-      status: 'Pending',
-      type: 'Quarterly Demographics',
-      submittedBy: 'Fallback LGU User',
-      submittedAt: '2026-03-30 09:30',
-      summary: 'Fallback report generated while backend is unavailable.',
-    },
-  ],
-};
-
 const FALLBACK_LGU_OVERVIEW: LguOverviewAdminResponse = {
   lgu_id: 'lgu_san_pedro_001',
   name: 'San Pedro LGU',
@@ -327,28 +488,10 @@ const FALLBACK_ENTERPRISE_ANALYTICS: LguEnterpriseAnalyticsResponse = {
     businessId: 'LGU-BIZ-FALLBACK',
   },
   analytics: {
-    demographics: [
-      { name: 'Male', value: 52 },
-      { name: 'Female', value: 48 },
-    ],
-    residency: [
-      { name: 'Residents', value: 71 },
-      { name: 'Non-Residents', value: 20 },
-      { name: 'Foreign Tourists', value: 9 },
-    ],
-    visitorTrends: [
-      { month: 'Jan', visitors: 280 },
-      { month: 'Feb', visitors: 320 },
-      { month: 'Mar', visitors: 350 },
-      { month: 'Apr', visitors: 375 },
-    ],
-    reportHistory: [
-      {
-        date: '2026-03-15',
-        type: 'Monthly Submission',
-        status: 'Submitted',
-      },
-    ],
+    demographics: [],
+    residency: [],
+    visitorTrends: [],
+    reportHistory: [],
   },
 };
 
@@ -503,6 +646,53 @@ const toMutationResult = (payload: unknown, fallbackMessage: string): LguMutatio
   };
 };
 
+const parseBooleanSetting = (value: unknown): boolean | null => {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (typeof value === 'number') {
+    return value !== 0;
+  }
+
+  if (typeof value === 'string') {
+    const normalizedValue = value.trim().toLowerCase();
+    if (['1', 'true', 'yes', 'on', 'open'].includes(normalizedValue)) {
+      return true;
+    }
+
+    if (['0', 'false', 'no', 'off', 'close', 'closed'].includes(normalizedValue)) {
+      return false;
+    }
+  }
+
+  return null;
+};
+
+const resolveRequestErrorMessage = (error: unknown, fallbackMessage: string): string => {
+  if (typeof error === 'object' && error !== null && 'response' in error) {
+    const response = (error as { response?: { data?: { detail?: unknown; message?: unknown } } }).response;
+    const detail = response?.data?.detail;
+    if (typeof detail === 'string' && detail.trim()) {
+      return detail;
+    }
+
+    const message = response?.data?.message;
+    if (typeof message === 'string' && message.trim()) {
+      return message;
+    }
+  }
+
+  if (error instanceof Error) {
+    if (error.message === 'Network Error') {
+      return 'Unable to connect to the backend API. Please confirm the server is running and reachable.';
+    }
+    return error.message;
+  }
+
+  return fallbackMessage;
+};
+
 const actionLabelMap: Record<LguComplianceActionType, string> = {
   OPEN: 'Open to submit',
   REMIND: 'Reminder',
@@ -531,17 +721,39 @@ const buildLateSubmissionInfraction = (
   };
 };
 
-export const fetchLguOverview = async (): Promise<LguOverviewResponse> =>
-  withFallback<LguOverviewResponse>(() => api.get('/overview'), FALLBACK_OVERVIEW);
+export const fetchLguOverview = async (month?: string): Promise<LguOverviewResponse> => {
+  const targetMonth = month || DEFAULT_REPORTING_PERIOD;
+  try {
+    const response = await api.get<LguOverviewResponse>('/overview', { params: { month: targetMonth } });
+    return response.data;
+  } catch {
+    const dynamicResponse = buildDynamicOverviewResponse(targetMonth);
+    return convertDynamicToLegacyOverview(dynamicResponse);
+  }
+};
+
+export const fetchLguOverviewDynamic = async (month?: string): Promise<LguOverviewDynamicResponse> => {
+  const targetMonth = month || DEFAULT_REPORTING_PERIOD;
+  try {
+    const response = await api.get<LguOverviewDynamicResponse>('/overview/dynamic', { params: { month: targetMonth } });
+    return response.data;
+  } catch {
+    return buildDynamicOverviewResponse(targetMonth);
+  }
+};
 
 export const fetchLguLogs = async (): Promise<LguLogsResponse> =>
   withFallback<LguLogsResponse>(() => api.get('/logs'), FALLBACK_LOGS);
 
-export const fetchLguReportsDashboard = async (): Promise<LguReportsDashboardResponse> =>
-  withFallback<LguReportsDashboardResponse>(
-    () => api.get('/reports'),
-    FALLBACK_REPORTS_DASHBOARD,
-  );
+export const fetchLguReportsDashboard = async (month?: string): Promise<LguReportsDashboardResponse> => {
+  const targetMonth = month || DEFAULT_REPORTING_PERIOD;
+  try {
+    const response = await api.get<LguReportsDashboardResponse>('/reports', { params: { month: targetMonth } });
+    return response.data;
+  } catch {
+    return buildDynamicReportsDashboard(targetMonth);
+  }
+};
 
 export const fetchLguOverviewAdmin = async (): Promise<LguOverviewAdminResponse> =>
   withFallback<LguOverviewAdminResponse>(() => api.get('/lgu/overview'), FALLBACK_LGU_OVERVIEW);
@@ -623,7 +835,7 @@ const getSeriesValue = (
 
 export const fetchEnterpriseAnalyticsDetail = async (
   enterpriseId: number,
-): Promise<LguEnterpriseAnalyticsDetail> => {
+): Promise<LguEnterpriseAnalyticsDetail | null> => {
   const payload = await withFallback<LguEnterpriseAnalyticsResponse>(
     () => api.get(`/enterprises/${enterpriseId}/analytics`),
     {
@@ -634,6 +846,14 @@ export const fetchEnterpriseAnalyticsDetail = async (
       },
     },
   );
+
+  const hasTrendData = payload.analytics.visitorTrends.length > 0;
+  const hasDemographics = payload.analytics.demographics.length > 0;
+  const hasResidencyBreakdown = payload.analytics.residency.length > 0;
+
+  if (!hasTrendData && !hasDemographics && !hasResidencyBreakdown) {
+    return null;
+  }
 
   const latest = payload.analytics.visitorTrends[payload.analytics.visitorTrends.length - 1]?.visitors ?? 0;
   const previous = payload.analytics.visitorTrends[payload.analytics.visitorTrends.length - 2]?.visitors ?? latest;
@@ -681,8 +901,12 @@ export const fetchEnterpriseAnalyticsDetail = async (
 
 export const fetchEnterpriseAnalyticsSummary = async (
   enterpriseId: number,
-): Promise<LguEnterpriseAnalyticsSummary> => {
+): Promise<LguEnterpriseAnalyticsSummary | null> => {
   const detail = await fetchEnterpriseAnalyticsDetail(enterpriseId);
+
+  if (!detail) {
+    return null;
+  }
 
   return {
     monthlyVisitors: detail.monthlyVisitors,
@@ -691,26 +915,222 @@ export const fetchEnterpriseAnalyticsSummary = async (
   };
 };
 
+interface EnterpriseAccountsCatalogResponse {
+  accounts: Array<{
+    enterprise_id: string;
+    company_name: string;
+    linked_lgu_id: string;
+    dashboard_title?: string;
+    logo_url?: string;
+    username?: string;
+    barangay?: string;
+    compliance_status?: string;
+    window_status?: string;
+    reporting_window_status?: string;
+    has_submitted_for_period?: boolean;
+  }>;
+}
+
+interface EnterpriseDirectoryResponse {
+  enterprises: Array<{
+    name: string;
+    barangay?: string;
+    status?: string;
+    businessId?: string;
+  }>;
+}
+
+interface LguSettingValueResponse {
+  value?: unknown;
+  setting?: {
+    setting_value?: unknown;
+    is_reporting_window_open?: unknown;
+    updated_at?: string;
+    updated_by?: string;
+  };
+}
+
+interface LguSettingMutationResponse {
+  message?: string;
+  setting?: {
+    setting_value?: unknown;
+    updated_at?: string;
+    updated_by?: string;
+  };
+}
+
+export interface GlobalReportingWindowSettingState {
+  isOpen: boolean;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
+const normalizeLookupKey = (value: string): string => value.trim().toLowerCase();
+
+const deriveUsernameFromEnterpriseId = (enterpriseId: string, companyName: string): string => {
+  const fromId = enterpriseId.replace(/^ent_/, '').replace(/_/g, '.');
+  if (fromId.trim()) {
+    return fromId;
+  }
+
+  return companyName.trim().toLowerCase().replace(/\s+/g, '.');
+};
+
+const mapCatalogToLguAccounts = (
+  catalog: EnterpriseAccountsCatalogResponse,
+  directory: EnterpriseDirectoryResponse,
+  period: string,
+): LguEnterpriseAccount[] => {
+  const directoryByCompany = new Map<string, EnterpriseDirectoryResponse['enterprises'][number]>();
+
+  directory.enterprises.forEach((entry) => {
+    directoryByCompany.set(normalizeLookupKey(entry.name), entry);
+  });
+
+  return catalog.accounts.map((account) => {
+    const matchedEnterprise = directoryByCompany.get(normalizeLookupKey(account.company_name));
+    const rawWindowStatus =
+      account.reporting_window_status
+      || account.window_status
+      || 'CLOSED';
+    const normalizedWindowStatus = String(rawWindowStatus).toUpperCase();
+    const normalizedCompliance = String(account.compliance_status || '').toUpperCase();
+
+    const hasSubmitted =
+      typeof account.has_submitted_for_period === 'boolean'
+        ? account.has_submitted_for_period
+        : normalizedCompliance === 'SUBMITTED' || normalizedWindowStatus === 'SUBMITTED';
+
+    return {
+      enterprise_id: account.enterprise_id,
+      company_name: account.company_name,
+      linked_lgu_id: account.linked_lgu_id,
+      username: account.username || deriveUsernameFromEnterpriseId(account.enterprise_id, account.company_name),
+      barangay: account.barangay || matchedEnterprise?.barangay,
+      compliance_status: account.compliance_status,
+      window_status: account.window_status,
+      reporting_window_status: normalizedWindowStatus,
+      has_submitted_for_period: hasSubmitted,
+      period,
+      dashboard_title: account.dashboard_title,
+      logo_url: account.logo_url,
+    };
+  });
+};
+
+const fetchAccountsCatalogFallback = async (period: string): Promise<LguEnterpriseAccount[]> => {
+  const [catalogResult, directoryResult] = await Promise.allSettled([
+    api.get<EnterpriseAccountsCatalogResponse>('/enterprise/accounts'),
+    api.get<EnterpriseDirectoryResponse>('/enterprises'),
+  ]);
+
+  const catalog: EnterpriseAccountsCatalogResponse =
+    catalogResult.status === 'fulfilled'
+      ? catalogResult.value.data
+      : { accounts: [] };
+
+  const directory: EnterpriseDirectoryResponse =
+    directoryResult.status === 'fulfilled'
+      ? directoryResult.value.data
+      : { enterprises: [] };
+
+  return mapCatalogToLguAccounts(catalog, directory, period);
+};
+
 export const fetchLguEnterpriseAccounts = async (
   period = DEFAULT_REPORTING_PERIOD,
 ): Promise<LguEnterpriseAccountsResponse> => {
-  const response = await api.get<LguEnterpriseAccountsResponse>('/lgu/enterprise-accounts', { params: { period } });
-  const payload = response.data;
-
   const compareByBarangay = (left?: string, right?: string): number => {
     const leftLabel = left || 'Unassigned Barangay';
     const rightLabel = right || 'Unassigned Barangay';
     return leftLabel.localeCompare(rightLabel);
   };
 
-  return {
-    period,
-    accounts: payload.accounts.sort(
+  const sortAccounts = (accounts: LguEnterpriseAccount[]): LguEnterpriseAccount[] =>
+    accounts.sort(
       (left, right) =>
         compareByBarangay(left.barangay, right.barangay)
         || left.company_name.localeCompare(right.company_name),
-    ),
+    );
+
+  const toResponse = (
+    payload: LguEnterpriseAccountsResponse,
+    fallbackPeriod: string,
+  ): LguEnterpriseAccountsResponse => ({
+    period: payload.period || fallbackPeriod,
+    accounts: sortAccounts(payload.accounts || []),
+  });
+
+  try {
+    const response = await api.get<LguEnterpriseAccountsResponse>('/lgu/enterprise-accounts', {
+      params: { period },
+    });
+
+    const primary = toResponse(response.data, period);
+    if (primary.accounts.length > 0) {
+      return primary;
+    }
+
+    const unfilteredResponse = await api.get<LguEnterpriseAccountsResponse>('/lgu/enterprise-accounts');
+    const unfiltered = toResponse(unfilteredResponse.data, period);
+    if (unfiltered.accounts.length > 0) {
+      return unfiltered;
+    }
+  } catch {
+    // Fall through to structural account fallback when status/reporting tables are unavailable.
+  }
+
+  const fallbackAccounts = await fetchAccountsCatalogFallback(period);
+
+  return {
+    period,
+    accounts: sortAccounts(fallbackAccounts),
   };
+};
+
+export const fetchGlobalReportingWindowOpenState = async (): Promise<GlobalReportingWindowSettingState> => {
+  const response = await api.get<LguSettingValueResponse>(
+    `/lgu/settings/${REPORTING_WINDOW_OPEN_SETTING_KEY}`,
+  );
+
+  const payload = response.data;
+  const isOpen =
+    parseBooleanSetting(payload.value)
+    ?? parseBooleanSetting(payload.setting?.setting_value)
+    ?? parseBooleanSetting(payload.setting?.is_reporting_window_open)
+    ?? false;
+
+  return {
+    isOpen,
+    updatedAt: typeof payload.setting?.updated_at === 'string' ? payload.setting.updated_at : null,
+    updatedBy: typeof payload.setting?.updated_by === 'string' ? payload.setting.updated_by : null,
+  };
+};
+
+export const setGlobalReportingWindowOpenState = async (
+  isOpen: boolean,
+): Promise<LguMutationResult> => {
+  try {
+    const response = await api.put<LguSettingMutationResponse>('/lgu/settings', {
+      setting_key: REPORTING_WINDOW_OPEN_SETTING_KEY,
+      setting_value: isOpen,
+    });
+
+    const resolvedFlag = parseBooleanSetting(response.data.setting?.setting_value) ?? isOpen;
+    return {
+      success: true,
+      message:
+        response.data.message
+        || (resolvedFlag
+          ? 'Reporting window opened for enterprise submissions.'
+          : 'Reporting window closed for enterprise submissions.'),
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: resolveRequestErrorMessage(error, 'Unable to update reporting window state.'),
+    };
+  }
 };
 
 export const createEnterpriseAccount = async (

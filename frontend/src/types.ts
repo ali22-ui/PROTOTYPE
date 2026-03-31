@@ -467,6 +467,19 @@ export interface DashboardLayoutData {
   weeklyDemographicSeries: DashboardWeeklyAreaPoint[];
   hourlyDemographicSeries: DashboardHourlyAreaPoint[];
   residenceMixDistribution: ResidenceMixDistributionRow[];
+  hasData: boolean;
+}
+
+export interface EnterpriseDashboardMetrics {
+  averageVisits: number;
+  visitTrend: number;
+  peakDay: string | null;
+  peakTimeSpan: string | null;
+  reportStatus: string;
+  demographicTimeline: DashboardWeeklyAreaPoint[];
+  residenceMix: ResidenceMixDistributionRow[];
+  hourlyVolume: DashboardHourlyAreaPoint[];
+  hasData: boolean;
 }
 
 export interface CameraDetectionEventRow {
@@ -682,6 +695,33 @@ export interface LguEnterpriseNode {
   businessId: string;
 }
 
+export type EnterpriseTrendDirection = 'UP' | 'DOWN' | 'FLAT';
+
+export interface EnterpriseMapNodeCurrentMonthStats {
+  visitors: number;
+  topSegment: string;
+  trend: EnterpriseTrendDirection;
+  demographics: Array<{
+    name: string;
+    value: number;
+  }>;
+  totalTourists: number;
+  localResidents: number;
+  nonLocalResidents: number;
+  maleRatioPct: number;
+  femaleRatioPct: number;
+}
+
+export interface EnterpriseMapNode {
+  id: string;
+  name: string;
+  category: string;
+  status: 'Active' | 'Needs Renewal';
+  barangay: string;
+  businessId: string;
+  currentMonthStats?: EnterpriseMapNodeCurrentMonthStats | null;
+}
+
 export interface LguBarangayEnterprisesResponse {
   barangay: string;
   enterprises: LguEnterpriseNode[];
@@ -713,7 +753,7 @@ export interface LguEnterpriseAnalyticsResponse {
 export interface LguEnterpriseAnalyticsSummary {
   monthlyVisitors: number;
   topDemographic: string;
-  trendDirection: 'UP' | 'DOWN' | 'FLAT';
+  trendDirection: EnterpriseTrendDirection;
 }
 
 export interface LguEnterpriseAnalyticsDetail extends LguEnterpriseAnalyticsSummary {
@@ -751,7 +791,10 @@ export interface LguEnterpriseAccount {
   enterprise_id: string;
   company_name: string;
   linked_lgu_id: string;
+  username?: string;
   barangay?: string;
+  compliance_status?: string;
+  window_status?: string;
   reporting_window_status: LguReportingWindowStatus;
   has_submitted_for_period: boolean;
   infraction_count?: number;
@@ -786,6 +829,10 @@ export interface LguReportPack {
   enterprise_id: string;
   enterprise_name: string;
   linked_lgu_id?: string;
+  status?: string;
+  report_status?: string;
+  lifecycle_status?: string;
+  workflow_status?: string;
   period: {
     month: string;
     start?: string;
@@ -793,6 +840,14 @@ export interface LguReportPack {
   };
   submitted_at: string;
   submitted_by_user_id?: string;
+  authority_package_id?: string;
+  authorityPackageId?: string;
+  generated_at?: string;
+  generatedAt?: string;
+  printed_at?: string;
+  printedAt?: string;
+  is_printed?: boolean;
+  isPrinted?: boolean;
   kpis?: {
     total_visitors_mtd?: number;
     trend_pct?: number;
@@ -857,4 +912,59 @@ export interface LguSettingsPayload {
     complianceDigest: boolean;
     darkMode: boolean;
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DYNAMIC AGGREGATION PIPELINE TYPES
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface MonthlyReportSubmissionDemographics {
+  male: number;
+  female: number;
+  local: number;
+  nonLocal: number;
+  foreign: number;
+}
+
+export interface MonthlyReportSubmissionDailyData {
+  date: string;
+  visitors: number;
+  tourists: number;
+  male: number;
+  female: number;
+}
+
+export interface MonthlyReportSubmission {
+  enterpriseId: string;
+  barangay: string;
+  month: string;
+  totalVisitors: number;
+  totalTourists: number;
+  demographics: MonthlyReportSubmissionDemographics;
+  dailyData: MonthlyReportSubmissionDailyData[];
+  submittedAt: string;
+}
+
+export interface LguAggregatedStats {
+  month: string;
+  totalVisitors: number;
+  totalTourists: number;
+  totalPeopleToday: number;
+  currentlyInside: number;
+  demographics: MonthlyReportSubmissionDemographics;
+  dailyTrend: MonthlyReportSubmissionDailyData[];
+  enterpriseCount: number;
+  hasData: boolean;
+}
+
+export interface LguOverviewDynamicResponse {
+  city: string;
+  zip: string;
+  date: string;
+  aggregatedStats: LguAggregatedStats;
+  recentActivities: string[];
+  peakHour: Array<{
+    time: string;
+    value: number;
+  }>;
 }

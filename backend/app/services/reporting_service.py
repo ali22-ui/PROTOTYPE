@@ -14,6 +14,7 @@ from app.repositories.supabase_repositories import (
     enterprise_action_repo,
     report_submission_repo,
     reporting_window_repo,
+    system_settings_repo,
     audit_log_repo,
 )
 from app.schemas.enterprise import EnterpriseActionRequest, EnterpriseReportSubmission
@@ -33,6 +34,11 @@ def _resolve_reporting_window(enterprise_id: str, period: str | None = None) -> 
     return reporting_window_repo.get_by_enterprise_current(enterprise_id) or reporting_window_repo.get_by_enterprise(enterprise_id)
 
 
+def _is_global_reporting_window_open() -> bool:
+    state = system_settings_repo.get_reporting_window_state()
+    return bool(state.get("is_reporting_window_open", False))
+
+
 def submit_enterprise_report(body: EnterpriseReportSubmission):
     _require_supabase()
 
@@ -41,7 +47,9 @@ def submit_enterprise_report(body: EnterpriseReportSubmission):
         raise DomainNotFoundError("Enterprise account not found")
 
     window = _resolve_reporting_window(body.enterprise_id, body.period)
-    if not window:
+    is_global_open = _is_global_reporting_window_open()
+
+    if not window and not is_global_open:
         raise DomainNotFoundError("Enterprise reporting window not found")
 
     if enterprise["linked_lgu_id"] != enterprise_repository.get_archies_profile()["linked_lgu_id"]:
@@ -49,8 +57,18 @@ def submit_enterprise_report(body: EnterpriseReportSubmission):
 
     # Check if window allows submission
     open_statuses = ("OPEN", "REMIND", "WARN", "RENOTIFY")
-    if window["status"] not in open_statuses:
+    window_status = (window or {}).get("status")
+    if not is_global_open and window_status not in open_statuses:
         raise DomainConflictError("Reporting window is currently CLOSED")
+
+    if is_global_open and window_status not in open_statuses:
+        reporting_window_repo.open_window(
+            enterprise_id=body.enterprise_id,
+            period=body.period,
+            opened_by="lgu_admin_01",
+            message="Opened via global reporting window control.",
+            status="OPEN",
+        )
 
     # Build report pack
     report_pack = body.payload if body.payload else reporting_repository.build_report_pack(body.period, body.enterprise_id)
@@ -330,6 +348,11 @@ def open_reporting_window_all(body: ReportingWindowBulkAction):
         new_value={"status": status, "period": body.period, "count": total},
     )
 
+    system_settings_repo.set_reporting_window_open(
+        is_open=True,
+        updated_by="lgu_admin_01",
+    )
+
     return {
         "message": "All enterprise reporting windows are OPEN",
         "period": body.period,
@@ -347,6 +370,11 @@ def close_reporting_window_all(body: ReportingWindowBulkAction):
         action="close_all",
         actor_type="lgu_admin",
         new_value={"status": "CLOSED", "period": body.period, "count": total},
+    )
+
+    system_settings_repo.set_reporting_window_open(
+        is_open=False,
+        updated_by="lgu_admin_01",
     )
 
     return {

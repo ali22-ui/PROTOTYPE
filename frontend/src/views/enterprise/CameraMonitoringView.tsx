@@ -1,12 +1,55 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
+import { MonitorPlay, Smartphone } from 'lucide-react';
 import type { EnterpriseOutletContext } from '@/components/layout/EnterpriseShell';
 import ErrorState from '@/components/ui/ErrorState';
 import LoadingState from '@/components/ui/LoadingState';
 import { CameraPage } from '@/features/enterprise/camera';
+import type { CameraDetectionStats, CameraMode } from '@/features/enterprise/camera';
 import { useGlobalCamera } from '@/features/enterprise/camera/context/CameraContext';
 import { fetchCameraMonitoringEvents, fetchCameraMonitoringLayoutData } from '@/services/api';
 import type { CameraMonitoringLayoutData } from '@/types';
+
+const CAMERA_MODE_KEY = 'lgu-dashboard-camera-mode';
+
+const CameraModeValue = {
+  LIVE: 'live_webcam',
+  IP_WEBCAM: 'ip_webcam',
+} as const satisfies Record<string, CameraMode>;
+
+const DEFAULT_DETECTION_STATS: CameraDetectionStats = {
+  fps: 0,
+  tracked: 0,
+  male: 0,
+  female: 0,
+  unique: 0,
+  totalEvents: 0,
+};
+
+const resolveStoredCameraMode = (): CameraMode => {
+  if (typeof window === 'undefined') {
+    return CameraModeValue.LIVE;
+  }
+
+  const saved = window.localStorage.getItem(CAMERA_MODE_KEY);
+  if (saved === 'live' || saved === CameraModeValue.LIVE) {
+    return CameraModeValue.LIVE;
+  }
+
+  if (saved === CameraModeValue.IP_WEBCAM) {
+    return CameraModeValue.IP_WEBCAM;
+  }
+
+  return CameraModeValue.LIVE;
+};
+
+const getCameraModeDescription = (mode: CameraMode): string => {
+  if (mode === CameraModeValue.IP_WEBCAM) {
+    return 'Streaming from Mobile IP Camera';
+  }
+
+  return 'Streaming from Live Webcam';
+};
 
 export default function CameraMonitoringView(): JSX.Element {
   const MAX_EVENT_ROWS = 18;
@@ -18,6 +61,20 @@ export default function CameraMonitoringView(): JSX.Element {
     useState<CameraMonitoringLayoutData | null>(null);
   const [detectionEvents, setDetectionEvents] =
     useState<CameraMonitoringLayoutData['events']>([]);
+  const [cameraMode, setCameraMode] =
+    useState<CameraMode>(() => resolveStoredCameraMode());
+  const [detectionStats, setDetectionStats] =
+    useState<CameraDetectionStats>(DEFAULT_DETECTION_STATS);
+
+  const handleCameraModeChange = useCallback((mode: CameraMode): void => {
+    setCameraMode(mode);
+    window.localStorage.setItem(CAMERA_MODE_KEY, mode);
+    setDetectionStats(DEFAULT_DETECTION_STATS);
+  }, []);
+
+  const handleDetectionStatsChange = useCallback((stats: CameraDetectionStats): void => {
+    setDetectionStats(stats);
+  }, []);
 
   const loadLayout = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -78,7 +135,10 @@ export default function CameraMonitoringView(): JSX.Element {
   }
 
   const hasDetectionActivity =
-    layoutData.streamHealth.activeTracks > 0 || detectionEvents.length > 0;
+    detectionStats.tracked > 0
+    || detectionStats.totalEvents > 0
+    || layoutData.streamHealth.activeTracks > 0
+    || detectionEvents.length > 0;
   const visibleEvents = detectionEvents.slice(0, MAX_EVENT_ROWS);
 
   return (
@@ -98,19 +158,55 @@ export default function CameraMonitoringView(): JSX.Element {
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div>
               <p className="text-sm font-semibold uppercase tracking-wide text-brand-dark">
-                Camera Preview
+                Camera Monitoring
               </p>
               <p className="text-xs text-brand-dark/75">
-                {layoutData.cameraTitle}
+                {getCameraModeDescription(cameraMode)}
               </p>
             </div>
-            <span className="rounded-md border border-brand-mid/80 bg-brand-bg px-2 py-1 text-xs font-semibold text-brand-dark">
-              {layoutData.timestampLabel}
-            </span>
+
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleCameraModeChange(CameraModeValue.LIVE)}
+                  className={`flex items-center gap-2 rounded border px-4 py-2 font-medium transition-colors ${
+                    cameraMode === CameraModeValue.LIVE
+                      ? 'border-brand-dark bg-brand-dark text-white'
+                      : 'border-gray-200 bg-white text-brand-dark hover:bg-gray-50'
+                  }`}
+                >
+                  <MonitorPlay size={16} />
+                  Live Webcam
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleCameraModeChange(CameraModeValue.IP_WEBCAM)}
+                  className={`flex items-center gap-2 rounded border px-4 py-2 font-medium transition-colors ${
+                    cameraMode === CameraModeValue.IP_WEBCAM
+                      ? 'border-brand-dark bg-brand-dark text-white'
+                      : 'border-gray-200 bg-white text-brand-dark hover:bg-gray-50'
+                  }`}
+                >
+                  <Smartphone size={16} />
+                  Mobile IP Camera
+                </button>
+              </div>
+
+              <span className="rounded-md border border-brand-mid/80 bg-brand-bg px-2 py-1 text-xs font-semibold text-brand-dark">
+                {layoutData.timestampLabel}
+              </span>
+            </div>
           </div>
 
           <div className="rounded-xl bg-brand-bg/60 p-2 shadow-inner">
-            <CameraPage compactLayout />
+            <CameraPage
+              compactLayout
+              showInternalHeader={false}
+              mode={cameraMode}
+              onModeChange={handleCameraModeChange}
+              onStatsChange={handleDetectionStatsChange}
+            />
           </div>
         </article>
 
@@ -166,6 +262,41 @@ export default function CameraMonitoringView(): JSX.Element {
                 <span className="font-semibold">
                   {hasDetectionActivity ? 'Ready' : 'Not loaded'}
                 </span>
+              </div>
+            </div>
+          </article>
+
+          <article className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
+            <h3 className="text-sm font-bold text-gray-700 mb-4">Detection Stats</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-gray-50 flex justify-between p-2 rounded items-center">
+                <span className="text-gray-500 text-xs">FPS</span>
+                <span className="font-bold text-gray-800">{detectionStats.fps}</span>
+              </div>
+
+              <div className="bg-gray-50 flex justify-between p-2 rounded items-center">
+                <span className="text-gray-500 text-xs">Tracked</span>
+                <span className="font-bold text-gray-800">{detectionStats.tracked}</span>
+              </div>
+
+              <div className="bg-blue-50 flex justify-between p-2 rounded items-center">
+                <span className="text-blue-600 text-xs">Male</span>
+                <span className="text-blue-600 font-bold">{detectionStats.male}</span>
+              </div>
+
+              <div className="bg-pink-50 flex justify-between p-2 rounded items-center">
+                <span className="text-pink-600 text-xs">Female</span>
+                <span className="text-pink-600 font-bold">{detectionStats.female}</span>
+              </div>
+
+              <div className="bg-green-50 flex justify-between p-2 rounded items-center">
+                <span className="text-green-600 text-xs">Unique</span>
+                <span className="text-green-600 font-bold">{detectionStats.unique}</span>
+              </div>
+
+              <div className="bg-gray-50 flex justify-between p-2 rounded items-center">
+                <span className="text-gray-500 text-xs">Total Events</span>
+                <span className="font-bold text-gray-800">{detectionStats.totalEvents}</span>
               </div>
             </div>
           </article>

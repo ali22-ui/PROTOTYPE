@@ -57,6 +57,9 @@ const toDraftPayload = (form: EnterpriseFormState): LguEnterpriseAccountDraft =>
 
 const normalize = (value: string): string => value.trim().toLowerCase();
 
+const deriveAccountUsername = (account: LguEnterpriseAccount): string =>
+  account.enterprise_id.replace(/^ent_/, '').replace(/_/g, '.');
+
 const readEnterpriseMeta = (): Record<string, EnterpriseMeta> => {
   try {
     const raw = localStorage.getItem(ENTERPRISE_META_STORAGE_KEY);
@@ -72,7 +75,7 @@ const readEnterpriseMeta = (): Record<string, EnterpriseMeta> => {
 };
 
 export default function EnterpriseManagementView(): JSX.Element {
-  const [period, setPeriod] = useState<string>('2026-03');
+  const [period, setPeriod] = useState<string>(() => new Date().toISOString().slice(0, 7));
   const [accounts, setAccounts] = useState<LguEnterpriseAccount[]>([]);
   const [metaByEnterpriseId, setMetaByEnterpriseId] = useState<Record<string, EnterpriseMeta>>(() =>
     readEnterpriseMeta(),
@@ -90,10 +93,30 @@ export default function EnterpriseManagementView(): JSX.Element {
     const loadAccounts = async (): Promise<void> => {
       const payload = await fetchLguEnterpriseAccounts(period);
       setAccounts(payload.accounts);
+
+      setMetaByEnterpriseId((current) => {
+        const next = { ...current };
+        payload.accounts.forEach((account) => {
+          const existing = next[account.enterprise_id];
+          next[account.enterprise_id] = {
+            username: existing?.username || account.username || deriveAccountUsername(account),
+            contactEmail: existing?.contactEmail || '',
+            barangay: existing?.barangay || account.barangay || '',
+          };
+        });
+        return next;
+      });
+
+      if (!payload.accounts.length) {
+        setFeedback('No enterprise account records returned for the selected period.');
+      } else {
+        setFeedback('');
+      }
     };
 
     void loadAccounts().catch((error: unknown) => {
       console.error('Failed to load enterprise management accounts:', error);
+      setFeedback('Unable to load enterprise account records from backend.');
     });
   }, [period]);
 
@@ -109,12 +132,14 @@ export default function EnterpriseManagementView(): JSX.Element {
 
     return accounts.filter((account) => {
       const meta = metaByEnterpriseId[account.enterprise_id];
+      const resolvedUsername = account.username || meta?.username;
+      const resolvedBarangay = account.barangay || meta?.barangay;
       const haystack = [
         account.enterprise_id,
         account.company_name,
         account.linked_lgu_id,
-        meta?.username,
-        meta?.barangay,
+        resolvedUsername,
+        resolvedBarangay,
       ]
         .filter(Boolean)
         .join(' ')
@@ -166,9 +191,9 @@ export default function EnterpriseManagementView(): JSX.Element {
       enterprise_id: account.enterprise_id,
       company_name: account.company_name,
       linked_lgu_id: account.linked_lgu_id,
-      username: meta?.username || account.company_name.toLowerCase().replace(/\s+/g, '.'),
+      username: account.username || meta?.username || account.company_name.toLowerCase().replace(/\s+/g, '.'),
       temporary_password: '',
-      barangay: meta?.barangay || '',
+      barangay: account.barangay || meta?.barangay || '',
       contact_email: meta?.contactEmail || '',
     });
     setFeedback('');
@@ -231,6 +256,8 @@ export default function EnterpriseManagementView(): JSX.Element {
                 enterprise_id: draft.enterprise_id,
                 company_name: draft.company_name,
                 linked_lgu_id: draft.linked_lgu_id,
+                username: draft.username,
+                barangay: draft.barangay,
               }
               : item,
           ),
@@ -241,6 +268,8 @@ export default function EnterpriseManagementView(): JSX.Element {
             enterprise_id: draft.enterprise_id,
             company_name: draft.company_name,
             linked_lgu_id: draft.linked_lgu_id,
+            username: draft.username,
+            barangay: draft.barangay,
             reporting_window_status: 'CLOSED',
             has_submitted_for_period: false,
             period,
@@ -361,6 +390,8 @@ export default function EnterpriseManagementView(): JSX.Element {
             <tbody>
               {pagedAccounts.map((account) => {
                 const meta = metaByEnterpriseId[account.enterprise_id];
+                const resolvedUsername = account.username || meta?.username || deriveAccountUsername(account);
+                const resolvedBarangay = account.barangay || meta?.barangay || '-';
                 const windowStatus = String(account.reporting_window_status || 'CLOSED').toUpperCase();
                 const controlStatus = toControlStatusFromWindowStatus(windowStatus);
                 const statusTheme = getComplianceStatusTheme(controlStatus);
@@ -368,8 +399,8 @@ export default function EnterpriseManagementView(): JSX.Element {
                   <tr key={account.enterprise_id} className="border-t border-slate-100">
                     <td className="px-3 py-2 font-mono text-xs text-brand-dark">{account.enterprise_id}</td>
                     <td className="px-3 py-2 font-medium text-slate-800">{account.company_name}</td>
-                    <td className="px-3 py-2">{meta?.username || '-'}</td>
-                    <td className="px-3 py-2">{meta?.barangay || '-'}</td>
+                    <td className="px-3 py-2">{resolvedUsername}</td>
+                    <td className="px-3 py-2">{resolvedBarangay}</td>
                     <td className="px-3 py-2">
                       {(account.infraction_count || 0) > 0 ? (
                         <div>

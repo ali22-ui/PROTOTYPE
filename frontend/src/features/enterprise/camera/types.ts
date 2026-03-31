@@ -2,6 +2,15 @@ export type CameraMode = 'live_webcam' | 'ip_webcam';
 
 export type CameraConnectionState = 'connecting' | 'live' | 'source_unavailable' | 'backend_unavailable';
 
+export interface CameraDetectionStats {
+  fps: number;
+  tracked: number;
+  male: number;
+  female: number;
+  unique: number;
+  totalEvents: number;
+}
+
 export type GenderValue = 'male' | 'female' | 'unknown';
 
 export interface Point {

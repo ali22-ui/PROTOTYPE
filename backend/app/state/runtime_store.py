@@ -17,6 +17,7 @@ LGU_REPORT_PACKS = []
 AUTHORITY_PACKAGES = {}
 ENTERPRISE_ACTION_LOGS = []
 CAMERA_SOURCE_STATES: dict[str, "SourceState"] = {}
+SYSTEM_SETTINGS = {}
 
 
 def reset_runtime_state() -> None:
@@ -41,6 +42,16 @@ def reset_runtime_state() -> None:
     AUTHORITY_PACKAGES.clear()
     ENTERPRISE_ACTION_LOGS.clear()
     CAMERA_SOURCE_STATES.clear()
+
+    SYSTEM_SETTINGS.clear()
+    SYSTEM_SETTINGS.update(
+        {
+            "id": 1,
+            "is_reporting_window_open": False,
+            "updated_at": "",
+            "updated_by": "system",
+        }
+    )
 
 
 def reset_telemetry_state() -> None:
@@ -103,6 +114,25 @@ def get_authority_packages():
 
 def get_enterprise_action_logs():
     return ENTERPRISE_ACTION_LOGS
+
+
+def get_system_settings() -> dict:
+    return SYSTEM_SETTINGS
+
+
+def set_reporting_window_open(
+    is_open: bool,
+    updated_by: str = "system",
+    updated_at: str | None = None,
+) -> dict:
+    SYSTEM_SETTINGS["id"] = 1
+    SYSTEM_SETTINGS["is_reporting_window_open"] = bool(is_open)
+    SYSTEM_SETTINGS["updated_by"] = updated_by
+    if updated_at is not None:
+        SYSTEM_SETTINGS["updated_at"] = updated_at
+    elif "updated_at" not in SYSTEM_SETTINGS:
+        SYSTEM_SETTINGS["updated_at"] = ""
+    return SYSTEM_SETTINGS
 
 
 def get_camera_source_states():

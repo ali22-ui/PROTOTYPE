@@ -1,12 +1,13 @@
 from fastapi import APIRouter
 
-from domain_exceptions import DomainNotFoundError, DomainServiceUnavailableError
+from domain_exceptions import DomainConflictError, DomainNotFoundError, DomainServiceUnavailableError
 
 from app.core.supabase import get_supabase_client, is_supabase_available
 from app.repositories.supabase_repositories import (
     compliance_action_repo,
     enterprise_infraction_repo,
     lgu_settings_repo,
+    system_settings_repo,
 )
 from app.schemas.lgu import (
     EnterpriseComplianceAction,
@@ -32,11 +33,29 @@ from app.services.reporting_service import open_reporting_window_all as open_rep
 router = APIRouter(tags=["LGU"])
 
 LGU_ID = "lgu_san_pedro_001"
+REPORTING_WINDOW_SETTING_KEY = "is_reporting_window_open"
 
 
 def _require_supabase() -> None:
     if not is_supabase_available():
         raise DomainServiceUnavailableError("Supabase is required for LGU workflows")
+
+
+def _coerce_boolean_setting(value: object) -> bool | None:
+    if isinstance(value, bool):
+        return value
+
+    if isinstance(value, (int, float)):
+        return bool(value)
+
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on", "open"}:
+            return True
+        if normalized in {"0", "false", "no", "off", "close", "closed"}:
+            return False
+
+    return None
 
 
 @router.get("/lgu/overview")
@@ -114,15 +133,35 @@ def get_lgu_enterprise_accounts(
 @router.get("/lgu/settings")
 def get_lgu_settings():
     """Get all LGU settings."""
+    if not is_supabase_available():
+        system_state = system_settings_repo.get_reporting_window_state()
+        return {
+            "lgu_id": LGU_ID,
+            "settings": {
+                REPORTING_WINDOW_SETTING_KEY: bool(system_state.get("is_reporting_window_open", False)),
+            },
+        }
+
     _require_supabase()
 
     settings = lgu_settings_repo.list_by_lgu(LGU_ID)
+    system_state = system_settings_repo.get_reporting_window_state()
+    settings[REPORTING_WINDOW_SETTING_KEY] = bool(system_state.get("is_reporting_window_open", False))
     return {"lgu_id": LGU_ID, "settings": settings}
 
 
 @router.get("/lgu/settings/{setting_key}")
 def get_lgu_setting(setting_key: str):
     """Get a specific LGU setting."""
+    if setting_key == REPORTING_WINDOW_SETTING_KEY:
+        state = system_settings_repo.get_reporting_window_state()
+        return {
+            "lgu_id": LGU_ID,
+            "key": setting_key,
+            "value": bool(state.get("is_reporting_window_open", False)),
+            "setting": state,
+        }
+
     _require_supabase()
 
     value = lgu_settings_repo.get_value(LGU_ID, setting_key)
@@ -132,6 +171,26 @@ def get_lgu_setting(setting_key: str):
 @router.put("/lgu/settings")
 def update_lgu_setting(body: LguSettingsUpdate):
     """Update an LGU setting."""
+    if body.setting_key == REPORTING_WINDOW_SETTING_KEY:
+        normalized = _coerce_boolean_setting(body.setting_value)
+        if normalized is None:
+            raise DomainConflictError("is_reporting_window_open must be a boolean value")
+
+        setting = system_settings_repo.set_reporting_window_open(
+            is_open=normalized,
+            updated_by="lgu_admin_01",
+        )
+
+        return {
+            "message": "Reporting window setting updated",
+            "setting": {
+                "setting_key": REPORTING_WINDOW_SETTING_KEY,
+                "setting_value": bool(setting.get("is_reporting_window_open", False)),
+                "updated_at": setting.get("updated_at"),
+                "updated_by": setting.get("updated_by"),
+            },
+        }
+
     _require_supabase()
 
     result = lgu_settings_repo.upsert(LGU_ID, body.setting_key, body.setting_value)

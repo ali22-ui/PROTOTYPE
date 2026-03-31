@@ -10,12 +10,12 @@ import {
 import { subscribePortalBridge } from '@/lib/portalBridge';
 import type { LguAuthorityPackage, LguReportPack } from '@/types';
 
-const PRINTED_REPORT_STORAGE_KEY = 'lgu-printed-reports-v1';
-
 interface BarangayReportGroup {
   barangay: string;
   reports: LguReportPack[];
 }
+
+type ReportLifecycleStatus = 'SUBMITTED' | 'GENERATED' | 'PRINTED';
 
 const triggerBrowserDownload = (blob: Blob, filename: string): void => {
   const objectUrl = URL.createObjectURL(blob);
@@ -28,19 +28,6 @@ const triggerBrowserDownload = (blob: Blob, filename: string): void => {
   URL.revokeObjectURL(objectUrl);
 };
 
-const readPrintedReports = (): string[] => {
-  try {
-    const raw = localStorage.getItem(PRINTED_REPORT_STORAGE_KEY);
-    if (!raw) {
-      return [];
-    }
-
-    return JSON.parse(raw) as string[];
-  } catch {
-    return [];
-  }
-};
-
 const fallbackBarangayFromEnterpriseName = (enterpriseName: string): string | null => {
   const stripped = enterpriseName.replace(/\s+Enterprise\s+Node$/i, '').trim();
   if (stripped.length > 0 && stripped !== enterpriseName) {
@@ -50,62 +37,96 @@ const fallbackBarangayFromEnterpriseName = (enterpriseName: string): string | nu
   return null;
 };
 
+const toReportLifecycleStatus = (report: LguReportPack): ReportLifecycleStatus => {
+  const explicitStatus = [
+    report.status,
+    report.report_status,
+    report.lifecycle_status,
+    report.workflow_status,
+  ].find((value): value is string => typeof value === 'string' && value.trim().length > 0);
+
+  const normalizedStatus = (explicitStatus || '').trim().toUpperCase();
+  const hasPrintedFlag =
+    report.is_printed === true
+    || report.isPrinted === true
+    || Boolean(report.printed_at)
+    || Boolean(report.printedAt);
+  const hasGeneratedFlag =
+    Boolean(report.generated_at)
+    || Boolean(report.generatedAt)
+    || Boolean(report.authority_package_id)
+    || Boolean(report.authorityPackageId);
+
+  if (normalizedStatus === 'PRINTED' || hasPrintedFlag) {
+    return 'PRINTED';
+  }
+
+  if (normalizedStatus === 'GENERATED' || hasGeneratedFlag) {
+    return 'GENERATED';
+  }
+
+  return 'SUBMITTED';
+};
+
 export default function ReportsWorkspaceView(): JSX.Element {
-  const [period, setPeriod] = useState<string>('2026-03');
+  const [period, setPeriod] = useState<string>(() => new Date().toISOString().slice(0, 7));
   const [reportPacks, setReportPacks] = useState<LguReportPack[]>([]);
   const [enterpriseBarangayById, setEnterpriseBarangayById] = useState<Record<string, string>>({});
   const [expandedBarangays, setExpandedBarangays] = useState<string[]>([]);
   const [selectedReportId, setSelectedReportId] = useState<string>('');
   const [selectedReportDetail, setSelectedReportDetail] = useState<LguReportPack | null>(null);
   const [authorityPackages, setAuthorityPackages] = useState<Record<string, LguAuthorityPackage>>({});
-  const [printedReportIds, setPrintedReportIds] = useState<string[]>(() => readPrintedReports());
   const [feedback, setFeedback] = useState<string>('');
+  const [isLoadingReports, setIsLoadingReports] = useState<boolean>(false);
   const [isBusy, setIsBusy] = useState<boolean>(false);
 
   const loadReportPacks = useCallback(async (): Promise<void> => {
-    const [reportsPayload, accountsPayload] = await Promise.all([
-      fetchLguReportPacks(period),
-      fetchLguEnterpriseAccounts(period),
-    ]);
+    setIsLoadingReports(true);
+    try {
+      const [reportsPayload, accountsPayload] = await Promise.all([
+        fetchLguReportPacks(period),
+        fetchLguEnterpriseAccounts(period),
+      ]);
 
-    setReportPacks(reportsPayload.reports);
+      setReportPacks(reportsPayload.reports);
 
-    const barangayLookup = accountsPayload.accounts.reduce<Record<string, string>>((acc, account) => {
-      if (account.barangay) {
-        acc[account.enterprise_id] = account.barangay;
-      }
+      const barangayLookup = accountsPayload.accounts.reduce<Record<string, string>>((acc, account) => {
+        if (account.barangay) {
+          acc[account.enterprise_id] = account.barangay;
+        }
 
-      return acc;
-    }, {});
+        return acc;
+      }, {});
 
-    setEnterpriseBarangayById(barangayLookup);
+      setEnterpriseBarangayById(barangayLookup);
 
-    setSelectedReportId((current) => {
-      if (current && reportsPayload.reports.some((report) => report.report_id === current)) {
-        return current;
-      }
+      setSelectedReportId((current) => {
+        if (current && reportsPayload.reports.some((report) => report.report_id === current)) {
+          return current;
+        }
 
-      return reportsPayload.reports[0]?.report_id || '';
-    });
+        return reportsPayload.reports[0]?.report_id || '';
+      });
+    } catch (error: unknown) {
+      console.error('Failed to load LGU report packs:', error);
+      setReportPacks([]);
+      setEnterpriseBarangayById({});
+      setSelectedReportId('');
+      setSelectedReportDetail(null);
+    } finally {
+      setIsLoadingReports(false);
+    }
   }, [period]);
 
   useEffect(() => {
-    void loadReportPacks().catch((error: unknown) => {
-      console.error('Failed to load LGU report packs:', error);
-    });
+    void loadReportPacks();
   }, [loadReportPacks]);
 
   useEffect(() => {
     return subscribePortalBridge(() => {
-      void loadReportPacks().catch((error: unknown) => {
-        console.error('Failed to refresh LGU report packs after bridge update:', error);
-      });
+      void loadReportPacks();
     });
   }, [loadReportPacks]);
-
-  useEffect(() => {
-    localStorage.setItem(PRINTED_REPORT_STORAGE_KEY, JSON.stringify(printedReportIds));
-  }, [printedReportIds]);
 
   useEffect(() => {
     if (!selectedReportId) {
@@ -171,16 +192,70 @@ export default function ReportsWorkspaceView(): JSX.Element {
     });
   };
 
-  const generatedCount = Object.keys(authorityPackages).length;
-  const printedCount = printedReportIds.length;
+  const updateReportLifecycleStatus = (
+    reportId: string,
+    nextStatus: ReportLifecycleStatus,
+    authorityPackageId?: string,
+  ): void => {
+    const nowIso = new Date().toISOString();
+    const applyLifecycleUpdate = (report: LguReportPack): LguReportPack => {
+      if (report.report_id !== reportId) {
+        return report;
+      }
+
+      const currentStatus = toReportLifecycleStatus(report);
+      if (currentStatus === 'PRINTED' && nextStatus === 'GENERATED') {
+        return {
+          ...report,
+          authority_package_id: authorityPackageId || report.authority_package_id,
+          generated_at: report.generated_at || nowIso,
+        };
+      }
+
+      if (nextStatus === 'GENERATED') {
+        return {
+          ...report,
+          status: 'GENERATED',
+          authority_package_id: authorityPackageId || report.authority_package_id,
+          generated_at: report.generated_at || nowIso,
+        };
+      }
+
+      return {
+        ...report,
+        status: 'PRINTED',
+        authority_package_id: authorityPackageId || report.authority_package_id,
+        generated_at: report.generated_at || nowIso,
+        printed_at: report.printed_at || nowIso,
+      };
+    };
+
+    setReportPacks((current) => current.map(applyLifecycleUpdate));
+    setSelectedReportDetail((current) => (current ? applyLifecycleUpdate(current) : current));
+  };
+
+  const metrics = useMemo(() => {
+    const aggregatedFiles = reportPacks.length;
+    const generatedReports = reportPacks.filter((report) => toReportLifecycleStatus(report) === 'GENERATED').length;
+    const printedReports = reportPacks.filter((report) => toReportLifecycleStatus(report) === 'PRINTED').length;
+
+    return {
+      aggregatedFiles,
+      generatedReports,
+      printedReports,
+    };
+  }, [reportPacks]);
+
+  const renderMetricValue = (value: number, colorClass: string): JSX.Element => {
+    if (isLoadingReports) {
+      return <div className="mt-2 h-9 w-20 animate-pulse rounded-lg bg-slate-200" />;
+    }
+
+    return <p className={`mt-2 text-3xl font-black ${colorClass}`}>{value}</p>;
+  };
 
   const markPrinted = (reportId: string): void => {
-    setPrintedReportIds((current) => {
-      if (current.includes(reportId)) {
-        return current;
-      }
-      return [...current, reportId];
-    });
+    updateReportLifecycleStatus(reportId, 'PRINTED');
     setFeedback(`Report ${reportId} marked as printed in LGU workspace.`);
   };
 
@@ -197,6 +272,7 @@ export default function ReportsWorkspaceView(): JSX.Element {
         ...current,
         [selectedReportId]: payload,
       }));
+      updateReportLifecycleStatus(selectedReportId, 'GENERATED', payload.authority_package_id);
       setFeedback(`Authority package generated for ${selectedReportId}.`);
     } catch (error: unknown) {
       console.error('Failed to generate authority package:', error);
@@ -249,17 +325,17 @@ export default function ReportsWorkspaceView(): JSX.Element {
       <section className="grid gap-3 md:grid-cols-3">
         <article className="rounded-2xl border border-brand-light/70 bg-white p-4 shadow-sm">
           <p className="text-xs uppercase tracking-wide text-slate-500">Aggregated Files</p>
-          <p className="mt-2 text-3xl font-black text-brand-dark">{reportPacks.length}</p>
+          {renderMetricValue(metrics.aggregatedFiles, 'text-brand-dark')}
           <p className="mt-1 text-sm text-slate-500">Total enterprise reports compiled.</p>
         </article>
         <article className="rounded-2xl border border-brand-light/70 bg-white p-4 shadow-sm">
           <p className="text-xs uppercase tracking-wide text-slate-500">Generated Reports</p>
-          <p className="mt-2 text-3xl font-black text-blue-700">{generatedCount}</p>
+          {renderMetricValue(metrics.generatedReports, 'text-blue-700')}
           <p className="mt-1 text-sm text-slate-500">Reports ready for internal review.</p>
         </article>
         <article className="rounded-2xl border border-brand-light/70 bg-white p-4 shadow-sm">
           <p className="text-xs uppercase tracking-wide text-slate-500">Printed</p>
-          <p className="mt-2 text-3xl font-black text-emerald-700">{printedCount}</p>
+          {renderMetricValue(metrics.printedReports, 'text-emerald-700')}
           <p className="mt-1 text-sm text-slate-500">Physical copies logged.</p>
         </article>
       </section>
@@ -306,7 +382,8 @@ export default function ReportsWorkspaceView(): JSX.Element {
                       <div className="space-y-1.5 border-t border-brand-light/70 bg-white p-2">
                         {group.reports.map((report) => {
                           const isSelected = selectedReportId === report.report_id;
-                          const isPrinted = printedReportIds.includes(report.report_id);
+                          const lifecycleStatus = toReportLifecycleStatus(report);
+                          const isPrinted = lifecycleStatus === 'PRINTED';
 
                           return (
                             <button
@@ -328,6 +405,10 @@ export default function ReportsWorkspaceView(): JSX.Element {
                                 <span className="mt-2 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
                                   Printed
                                 </span>
+                              ) : lifecycleStatus === 'GENERATED' ? (
+                                <span className="mt-2 inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                                  Generated
+                                </span>
                               ) : null}
                             </button>
                           );
@@ -339,9 +420,11 @@ export default function ReportsWorkspaceView(): JSX.Element {
               })}
 
               {!groupedReportPacks.length ? (
-                <p className="rounded-xl border border-brand-light/70 bg-brand-cream px-3 py-2 text-xs text-slate-600">
-                  No report packs available for the selected month.
-                </p>
+                <div className="rounded-xl border border-brand-light/70 bg-brand-cream/70 px-4 py-5 text-center shadow-sm">
+                  <p className="text-sm italic text-brand-mid/80">
+                    No report packs available for the selected month.
+                  </p>
+                </div>
               ) : null}
             </div>
           </article>

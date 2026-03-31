@@ -20,12 +20,10 @@ import {
 } from '@/features/lgu/master/config/mapConfig';
 import EnterpriseDetailsModal from '@/features/lgu/master/components/EnterpriseDetailsModal';
 import type {
+  EnterpriseMapNode,
   LguBarangay,
   LguBarangaysGeoJsonResponse,
   LguBarangaysResponse,
-  LguEnterpriseAnalyticsDetail,
-  LguEnterpriseAnalyticsSummary,
-  LguEnterpriseNode,
 } from '@/types';
 
 const normalizeBarangayName = (value: string): string =>
@@ -140,7 +138,7 @@ function toComplianceStatus(status: string): 'Active' | 'Needs Renewal' {
   return status.toLowerCase() === 'active' ? 'Active' : 'Needs Renewal';
 }
 
-function trendColor(direction: LguEnterpriseAnalyticsSummary['trendDirection']): string {
+function trendColor(direction: NonNullable<EnterpriseMapNode['currentMonthStats']>['trend']): string {
   if (direction === 'UP') return 'text-emerald-700';
   if (direction === 'DOWN') return 'text-rose-700';
   return 'text-slate-700';
@@ -153,11 +151,8 @@ export default function MapView(): JSX.Element {
   });
   const [boundariesPayload, setBoundariesPayload] = useState<LguBarangaysGeoJsonResponse | null>(null);
   const [selectedBarangayName, setSelectedBarangayName] = useState<string>('');
-  const [enterprises, setEnterprises] = useState<LguEnterpriseNode[]>([]);
-  const [analyticsByEnterprise, setAnalyticsByEnterprise] = useState<
-    Record<number, LguEnterpriseAnalyticsDetail>
-  >({});
-  const [selectedEnterpriseId, setSelectedEnterpriseId] = useState<number | null>(null);
+  const [enterprises, setEnterprises] = useState<EnterpriseMapNode[]>([]);
+  const [selectedEnterpriseId, setSelectedEnterpriseId] = useState<string | null>(null);
   const [isLoadingEnterprises, setIsLoadingEnterprises] = useState<boolean>(false);
 
   useEffect(() => {
@@ -276,7 +271,7 @@ export default function MapView(): JSX.Element {
     [],
   );
 
-  const selectedEnterprise = useMemo<LguEnterpriseNode | null>(() => {
+  const selectedEnterprise = useMemo<EnterpriseMapNode | null>(() => {
     if (!selectedEnterpriseId) {
       return null;
     }
@@ -294,30 +289,51 @@ export default function MapView(): JSX.Element {
     const loadEnterprises = async (): Promise<void> => {
       setIsLoadingEnterprises(true);
       const payload = await fetchBarangayEnterpriseNodes(selectedBarangayQueryName);
-      setEnterprises(payload.enterprises);
+
+      const mappedEnterprises = await Promise.all(
+        payload.enterprises.map(async (enterprise) => {
+          const detail = await fetchEnterpriseAnalyticsDetail(enterprise.id).catch(() => null);
+
+          const currentMonthStats = detail
+            ? {
+              visitors: detail.monthlyVisitors,
+              topSegment: detail.topDemographic,
+              trend: detail.trendDirection,
+              demographics: detail.demographics,
+              totalTourists: detail.totalTourists,
+              localResidents: detail.localResidents,
+              nonLocalResidents: detail.nonLocalResidents,
+              maleRatioPct: detail.maleRatioPct,
+              femaleRatioPct: detail.femaleRatioPct,
+            }
+            : null;
+
+          return {
+            id: enterprise.id.toString(),
+            name: enterprise.name,
+            category: enterprise.type,
+            status: toComplianceStatus(enterprise.status),
+            barangay: enterprise.barangay,
+            businessId: enterprise.businessId,
+            currentMonthStats,
+          } satisfies EnterpriseMapNode;
+        }),
+      );
+
+      setEnterprises(mappedEnterprises);
       setSelectedEnterpriseId((current) => {
-        if (current && payload.enterprises.some((enterprise) => enterprise.id === current)) {
+        if (current && mappedEnterprises.some((enterprise) => enterprise.id === current)) {
           return current;
         }
 
         return null;
       });
-
-      const summaries = await Promise.all(
-        payload.enterprises.map(async (enterprise) => {
-          const summary = await fetchEnterpriseAnalyticsDetail(enterprise.id);
-          return [enterprise.id, summary] as const;
-        }),
-      );
-
-      setAnalyticsByEnterprise(Object.fromEntries(summaries));
       setIsLoadingEnterprises(false);
     };
 
     void loadEnterprises().catch((error: unknown) => {
       console.error('Failed to load selected barangay enterprises:', error);
       setEnterprises([]);
-      setAnalyticsByEnterprise({});
       setSelectedEnterpriseId(null);
       setIsLoadingEnterprises(false);
     });
@@ -432,8 +448,8 @@ export default function MapView(): JSX.Element {
             <div className="mt-3 flex-1 overflow-y-auto p-2 pr-1">
               <div className="space-y-2 pb-2">
                 {enterprises.map((enterprise) => {
-                  const summary = analyticsByEnterprise[enterprise.id];
-                  const complianceStatus = toComplianceStatus(enterprise.status);
+                  const stats = enterprise.currentMonthStats ?? null;
+                  const complianceStatus = enterprise.status;
                   const isSelectedEnterprise = selectedEnterpriseId === enterprise.id;
 
                   return (
@@ -452,7 +468,7 @@ export default function MapView(): JSX.Element {
                           <div>
                             <p className="text-sm font-semibold text-brand-dark">{enterprise.name}</p>
                             <p className="text-xs text-slate-600">
-                              {enterprise.barangay} • {enterprise.type}
+                              {enterprise.barangay} • {enterprise.category}
                             </p>
                           </div>
                           <span
@@ -466,25 +482,34 @@ export default function MapView(): JSX.Element {
                           </span>
                         </div>
 
-                        <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-700">
-                          <div className="rounded-lg bg-white px-2 py-1.5">
-                            <p className="text-slate-500">Monthly Visitors</p>
-                            <p className="font-semibold text-brand-dark">
-                              {(summary?.monthlyVisitors ?? 0).toLocaleString()}
-                            </p>
-                          </div>
-                          <div className="rounded-lg bg-white px-2 py-1.5">
-                            <p className="text-slate-500">Top Segment</p>
-                            <p className="font-semibold text-brand-dark">{summary?.topDemographic ?? 'N/A'}</p>
-                          </div>
-                        </div>
+                        {stats ? (
+                          <>
+                            <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-700">
+                              <div className="rounded-lg bg-white px-2 py-1.5">
+                                <p className="text-slate-500">Monthly Visitors</p>
+                                <p className="font-semibold text-brand-dark">{stats.visitors.toLocaleString()}</p>
+                              </div>
+                              <div className="rounded-lg bg-white px-2 py-1.5">
+                                <p className="text-slate-500">Top Segment</p>
+                                <p className="font-semibold text-brand-dark">{stats.topSegment}</p>
+                              </div>
+                            </div>
 
-                        <div className="mt-2 flex items-center justify-between gap-2">
-                          <p className={`text-[11px] font-semibold ${trendColor(summary?.trendDirection ?? 'FLAT')}`}>
-                            Trend: {summary?.trendDirection ?? 'FLAT'}
-                          </p>
-                          <p className="text-[11px] font-semibold text-brand-dark">Click to view full stats</p>
-                        </div>
+                            <div className="mt-2 flex items-center justify-between gap-2">
+                              <p className={`text-[11px] font-semibold ${trendColor(stats.trend)}`}>
+                                Trend: {stats.trend}
+                              </p>
+                              <p className="text-[11px] font-semibold text-brand-dark">Click to view full stats</p>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-sm text-brand-mid/80 italic py-4 text-center">No report data submitted for this period.</p>
+                            <div className="mt-1 flex items-center justify-end gap-2">
+                              <p className="text-[11px] font-semibold text-brand-dark">Click to view account details</p>
+                            </div>
+                          </>
+                        )}
                       </button>
                     </article>
                   );
@@ -503,7 +528,6 @@ export default function MapView(): JSX.Element {
 
       <EnterpriseDetailsModal
         enterprise={selectedEnterprise}
-        analytics={selectedEnterprise ? analyticsByEnterprise[selectedEnterprise.id] ?? null : null}
         onClose={() => setSelectedEnterpriseId(null)}
       />
     </div>

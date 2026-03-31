@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Optional
 
 from app.core.supabase import get_supabase_client, is_supabase_available
+from app.state import runtime_store
 
 
 class SupabaseRepository:
@@ -627,6 +628,108 @@ class LguSettingsRepository(SupabaseRepository):
         return bool(result.data)
 
 
+class SystemSettingsRepository(SupabaseRepository):
+    """Repository for global system settings shared across portals."""
+
+    TABLE = "system_settings"
+    PRIMARY_ID = 1
+
+    @staticmethod
+    def _normalize_bool(value: object) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on", "open"}
+        if isinstance(value, (int, float)):
+            return value != 0
+        return False
+
+    def _normalize_row(self, row: dict) -> dict:
+        return {
+            "id": row.get("id", self.PRIMARY_ID),
+            "is_reporting_window_open": self._normalize_bool(row.get("is_reporting_window_open")),
+            "updated_at": row.get("updated_at"),
+            "updated_by": row.get("updated_by"),
+        }
+
+    def get_reporting_window_state(self) -> dict:
+        """Get global reporting window state from system_settings table."""
+        if not is_supabase_available():
+            return dict(runtime_store.get_system_settings())
+
+        client = self._get_client()
+
+        try:
+            result = (
+                client.table(self.TABLE)
+                .select("id,is_reporting_window_open,updated_at,updated_by")
+                .eq("id", self.PRIMARY_ID)
+                .limit(1)
+                .execute()
+            )
+
+            if result.data and len(result.data) > 0:
+                normalized = self._normalize_row(result.data[0])
+            else:
+                seed = {
+                    "id": self.PRIMARY_ID,
+                    "is_reporting_window_open": False,
+                    "updated_at": self._now_iso(),
+                    "updated_by": "system",
+                }
+                upsert_result = client.table(self.TABLE).upsert(seed, on_conflict="id").execute()
+                row = upsert_result.data[0] if upsert_result.data else seed
+                normalized = self._normalize_row(row)
+
+            runtime_store.set_reporting_window_open(
+                normalized["is_reporting_window_open"],
+                updated_by=str(normalized.get("updated_by") or "system"),
+                updated_at=str(normalized.get("updated_at") or ""),
+            )
+
+            return normalized
+        except Exception:
+            return dict(runtime_store.get_system_settings())
+
+    def set_reporting_window_open(
+        self,
+        is_open: bool,
+        updated_by: str = "lgu_admin_01",
+    ) -> dict:
+        """Persist global reporting window open/closed state."""
+        now = self._now_iso()
+
+        runtime_store.set_reporting_window_open(
+            bool(is_open),
+            updated_by=updated_by,
+            updated_at=now,
+        )
+
+        if not is_supabase_available():
+            return dict(runtime_store.get_system_settings())
+
+        client = self._get_client()
+        payload = {
+            "id": self.PRIMARY_ID,
+            "is_reporting_window_open": bool(is_open),
+            "updated_at": now,
+            "updated_by": updated_by,
+        }
+
+        try:
+            result = client.table(self.TABLE).upsert(payload, on_conflict="id").execute()
+            row = result.data[0] if result.data else payload
+            normalized = self._normalize_row(row)
+            runtime_store.set_reporting_window_open(
+                normalized["is_reporting_window_open"],
+                updated_by=str(normalized.get("updated_by") or updated_by),
+                updated_at=str(normalized.get("updated_at") or now),
+            )
+            return normalized
+        except Exception:
+            return dict(runtime_store.get_system_settings())
+
+
 class EnterpriseInfractionRepository(SupabaseRepository):
     """Repository for enterprise infraction operations."""
 
@@ -867,6 +970,7 @@ report_submission_repo = ReportSubmissionRepository()
 authority_package_repo = AuthorityPackageRepository()
 enterprise_action_repo = EnterpriseActionRepository()
 lgu_settings_repo = LguSettingsRepository()
+system_settings_repo = SystemSettingsRepository()
 enterprise_infraction_repo = EnterpriseInfractionRepository()
 compliance_action_repo = ComplianceActionRepository()
 audit_log_repo = AuditLogRepository()
