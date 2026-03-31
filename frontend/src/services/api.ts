@@ -305,22 +305,6 @@ const createDefaultAccountSettings = (
   };
 };
 
-const parseTimeSlotToDate = (date: string, timeSlot: string): Date => {
-  const matched = /(\d{1,2}):(\d{2})\s*(AM|PM)/i.exec(timeSlot);
-  if (!matched) {
-    return new Date(`${date}T08:00:00`);
-  }
-
-  const [, hourString, minuteString, period] = matched;
-  let hour = Number(hourString) % 12;
-  if (period.toUpperCase() === 'PM') {
-    hour += 12;
-  }
-
-  const normalizedHour = String(hour).padStart(2, '0');
-  return new Date(`${date}T${normalizedHour}:${minuteString}:00`);
-};
-
 const resolvePeakDate = (rows: DetailedDetectionRow[]): string => {
   if (rows.length === 0) {
     return 'N/A';
@@ -357,30 +341,6 @@ const deriveTouristCount = (dashboard: EnterpriseDashboardResponse): number => {
   }
 
   return Math.round(dashboard.key_stats.total_visitors_mtd * 0.28);
-};
-
-const adaptDetailedRowToCameraLog = (row: DetailedDetectionRow, index: number): CameraLog => {
-  const timeInDate = parseTimeSlotToDate(row.date, row.time_slot);
-  const total = row.male_total + row.female_total;
-  const durationMinutes = Math.min(12 * 60, Math.max(20, 40 + total * 8));
-  const timeOutDate = new Date(timeInDate.getTime() + durationMinutes * 60_000);
-  const durationHours = Number((durationMinutes / 60).toFixed(2));
-  const classification: CameraLog['classification'] = durationHours > 8 ? 'Tourist' : 'Visitor';
-
-  return {
-    id: `${row.date}-${row.time_slot.replace(/\s+/g, '').replace(':', '')}-${index}`,
-    uniqueId: `CAM-${String(index + 1).padStart(5, '0')}`,
-    timeInIso: timeInDate.toISOString(),
-    timeOutIso: timeOutDate.toISOString(),
-    timeIn: formatDateTime(timeInDate.toISOString()),
-    timeOut: formatDateTime(timeOutDate.toISOString()),
-    durationHours,
-    durationLabel: formatDuration(durationHours),
-    classification,
-    maleCount: row.male_total,
-    femaleCount: row.female_total,
-    totalCount: total,
-  };
 };
 
 const adaptDbCameraLogToCameraLog = (row: DbCameraLogRecord, index: number): CameraLog => {
@@ -551,22 +511,12 @@ export const fetchCameraLogs = async (enterpriseId: string, month?: string): Pro
     });
 
     const dbRows = response.data || [];
-    if (dbRows.length > 0) {
-      return dbRows
-        .map((row, index) => adaptDbCameraLogToCameraLog(row, index))
-        .sort((left, right) => right.timeInIso.localeCompare(left.timeInIso));
-    }
+    return dbRows
+      .map((row, index) => adaptDbCameraLogToCameraLog(row, index))
+      .sort((left, right) => right.timeInIso.localeCompare(left.timeInIso));
   } catch {
-    // Fallback to dashboard rows when DB query is unavailable.
+    return [];
   }
-
-  const dashboard = await fetchEnterpriseDashboard(enterpriseId);
-  const rows = dashboard.detailed_detection_rows || [];
-  const filteredRows = month ? rows.filter((row) => row.date.startsWith(month)) : rows;
-
-  return filteredRows
-    .map((row, index) => adaptDetailedRowToCameraLog(row, index))
-    .sort((left, right) => right.timeInIso.localeCompare(left.timeInIso));
 };
 
 export const fetchGlobalReportingWindowSetting = async (): Promise<GlobalReportingWindowSettingState> => {

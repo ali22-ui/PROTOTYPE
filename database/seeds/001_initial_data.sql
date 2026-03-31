@@ -10,7 +10,9 @@
 -- - Sample enterprises
 -- - User accounts for future authentication
 -- - Default cameras
+-- - Enterprise profile compatibility records
 -- - System settings
+-- - Reporting window defaults per enterprise
 -- ============================================
 -- ============================================
 -- Seed: LGU Master Record (San Pedro City)
@@ -169,6 +171,71 @@ SET company_name = EXCLUDED.company_name,
   address = EXCLUDED.address,
   contact_email = EXCLUDED.contact_email,
   description = EXCLUDED.description,
+  updated_at = NOW();
+-- ============================================
+-- Seed: Enterprise Profiles (Compatibility Layer)
+-- ============================================
+INSERT INTO enterprise_profiles (
+    id,
+    business_permit_number,
+    owner_name,
+    owner_contact,
+    description,
+    logo_url,
+    settings
+  )
+VALUES (
+    'ent_archies_001',
+    'BP-2024-00001',
+    'Archie Santos',
+    '+63-917-000-1001',
+    'Popular local restaurant serving Filipino and international cuisine',
+    NULL,
+    '{"emailNotifications": true, "themePreference": "system"}'::jsonb
+  ),
+  (
+    'ent_plaza_001',
+    'BP-2024-00002',
+    'Maria Reyes',
+    '+63-917-000-1002',
+    'Major shopping mall with retail stores, entertainment, and dining',
+    NULL,
+    '{"emailNotifications": true, "themePreference": "system"}'::jsonb
+  ),
+  (
+    'ent_resort_001',
+    'BP-2024-00003',
+    'Carlos Dela Cruz',
+    '+63-917-000-1003',
+    'Family-friendly resort with swimming pools and recreational facilities',
+    NULL,
+    '{"emailNotifications": true, "themePreference": "system"}'::jsonb
+  ),
+  (
+    'ent_cafe_001',
+    'BP-2024-00004',
+    'Anna Lim',
+    '+63-917-000-1004',
+    'Modern cafe with coffee, food, and co-working space',
+    NULL,
+    '{"emailNotifications": true, "themePreference": "system"}'::jsonb
+  ),
+  (
+    'ent_hotel_001',
+    'BP-2024-00005',
+    'John Bautista',
+    '+63-917-000-1005',
+    'Budget-friendly hotel for travelers and tourists',
+    NULL,
+    '{"emailNotifications": true, "themePreference": "system"}'::jsonb
+  ) ON CONFLICT (id) DO
+UPDATE
+SET business_permit_number = EXCLUDED.business_permit_number,
+  owner_name = EXCLUDED.owner_name,
+  owner_contact = EXCLUDED.owner_contact,
+  description = EXCLUDED.description,
+  logo_url = EXCLUDED.logo_url,
+  settings = EXCLUDED.settings,
   updated_at = NOW();
 -- ============================================
 -- Seed: User Accounts (For Future Authentication)
@@ -346,6 +413,43 @@ UPDATE
 SET is_reporting_window_open = EXCLUDED.is_reporting_window_open,
   updated_at = NOW();
 -- ============================================
+-- Seed: Reporting Windows (Current Month Defaults)
+-- ============================================
+INSERT INTO reporting_windows (
+    enterprise_id,
+    period,
+    status,
+    opened_at,
+    opened_by,
+    message
+  )
+SELECT e.id,
+  TO_CHAR(
+    (NOW() AT TIME ZONE 'Asia/Manila')::date,
+    'YYYY-MM'
+  ),
+  CASE
+    WHEN s.is_reporting_window_open THEN 'OPEN'
+    ELSE 'CLOSED'
+  END,
+  CASE
+    WHEN s.is_reporting_window_open THEN NOW()
+    ELSE NULL
+  END,
+  'system',
+  CASE
+    WHEN s.is_reporting_window_open THEN 'Initialized as OPEN from system settings seed.'
+    ELSE 'Initialized as CLOSED from system settings seed.'
+  END
+FROM enterprises e
+  CROSS JOIN system_settings s ON CONFLICT (enterprise_id, period) DO
+UPDATE
+SET status = EXCLUDED.status,
+  opened_at = COALESCE(reporting_windows.opened_at, EXCLUDED.opened_at),
+  opened_by = COALESCE(reporting_windows.opened_by, EXCLUDED.opened_by),
+  message = EXCLUDED.message,
+  updated_at = NOW();
+-- ============================================
 -- Seed: Initial Audit Log Entry
 -- ============================================
 INSERT INTO audit_logs (
@@ -370,6 +474,8 @@ VALUES (
 -- LGU: 1 (San Pedro City)
 -- Barangays: 27
 -- Enterprises: 5
+-- Enterprise Profiles: 5
 -- Accounts: 7 (2 LGU admin + 5 enterprise users)
 -- Cameras: 7
 -- System Settings: 1
+-- Reporting Windows: 5 (current month)

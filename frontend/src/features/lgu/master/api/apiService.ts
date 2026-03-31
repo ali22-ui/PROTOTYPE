@@ -41,7 +41,7 @@ import type {
   MonthlyReportSubmissionDemographics,
 } from '@/types';
 
-const DEFAULT_REPORTING_PERIOD = '2026-03';
+const DEFAULT_REPORTING_PERIOD = new Date().toISOString().slice(0, 7);
 const REPORTING_WINDOW_OPEN_SETTING_KEY = 'is_reporting_window_open';
 
 const MONTHLY_SUBMISSIONS_STORAGE_KEY = 'lgu-monthly-report-submissions-v1';
@@ -340,29 +340,29 @@ const buildDynamicOverviewResponse = (month: string): LguOverviewDynamicResponse
 
   const peakHour = stats.hasData
     ? [
-        { time: '9 AM', value: Math.round(stats.totalVisitors * 0.055) },
-        { time: '10 AM', value: Math.round(stats.totalVisitors * 0.071) },
-        { time: '11 AM', value: Math.round(stats.totalVisitors * 0.089) },
-        { time: '12 PM', value: Math.round(stats.totalVisitors * 0.107) },
-        { time: '1 PM', value: Math.round(stats.totalVisitors * 0.115) },
-        { time: '2 PM', value: Math.round(stats.totalVisitors * 0.102) },
-        { time: '3 PM', value: Math.round(stats.totalVisitors * 0.096) },
-        { time: '4 PM', value: Math.round(stats.totalVisitors * 0.088) },
-        { time: '5 PM', value: Math.round(stats.totalVisitors * 0.074) },
-        { time: '6 PM', value: Math.round(stats.totalVisitors * 0.061) },
-      ]
+      { time: '9 AM', value: Math.round(stats.totalVisitors * 0.055) },
+      { time: '10 AM', value: Math.round(stats.totalVisitors * 0.071) },
+      { time: '11 AM', value: Math.round(stats.totalVisitors * 0.089) },
+      { time: '12 PM', value: Math.round(stats.totalVisitors * 0.107) },
+      { time: '1 PM', value: Math.round(stats.totalVisitors * 0.115) },
+      { time: '2 PM', value: Math.round(stats.totalVisitors * 0.102) },
+      { time: '3 PM', value: Math.round(stats.totalVisitors * 0.096) },
+      { time: '4 PM', value: Math.round(stats.totalVisitors * 0.088) },
+      { time: '5 PM', value: Math.round(stats.totalVisitors * 0.074) },
+      { time: '6 PM', value: Math.round(stats.totalVisitors * 0.061) },
+    ]
     : [];
 
   const recentActivities = stats.hasData
     ? [
-        `Aggregated data from ${stats.enterpriseCount} enterprise submission(s).`,
-        'LGU analytics feed synchronized for all enterprise nodes.',
-        'Map density model refreshed for San Pedro City 4023.',
-      ]
+      `Aggregated data from ${stats.enterpriseCount} enterprise submission(s).`,
+      'LGU analytics feed synchronized for all enterprise nodes.',
+      'Map density model refreshed for San Pedro City 4023.',
+    ]
     : [
-        'Awaiting enterprise submissions for the current reporting period.',
-        'No visitor data has been submitted yet.',
-      ];
+      'Awaiting enterprise submissions for the current reporting period.',
+      'No visitor data has been submitted yet.',
+    ];
 
   return {
     city: 'San Pedro City, Laguna',
@@ -435,32 +435,7 @@ const buildDynamicReportsDashboard = (month: string): LguReportsDashboardRespons
 // ─────────────────────────────────────────────────────────────────────────────
 
 const FALLBACK_LOGS: LguLogsResponse = {
-  logs: [
-    {
-      id: 'LOG-F001',
-      timestamp: '2026-03-30 08:10',
-      source: 'System',
-      category: 'Data Sync',
-      message: 'City-wide barangay feeds are operating in fallback mode.',
-      severity: 'Warning',
-    },
-    {
-      id: 'LOG-F002',
-      timestamp: '2026-03-30 08:34',
-      source: 'Compliance',
-      category: 'Enterprise',
-      message: '12 enterprise accounts are pending monthly report submission.',
-      severity: 'Info',
-    },
-    {
-      id: 'LOG-F003',
-      timestamp: '2026-03-30 09:02',
-      source: 'Map Engine',
-      category: 'Map',
-      message: 'San Pedro heat intensity tiles refreshed with deterministic fallback data.',
-      severity: 'Info',
-    },
-  ],
+  logs: [],
 };
 
 const FALLBACK_LGU_OVERVIEW: LguOverviewAdminResponse = {

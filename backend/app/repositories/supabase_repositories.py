@@ -257,13 +257,22 @@ class ReportSubmissionRepository(SupabaseRepository):
     def list_by_enterprise(self, enterprise_id: str) -> list[dict]:
         """List all reports for an enterprise."""
         client = self._get_client()
-        result = (
-            client.table(self.TABLE)
-            .select("*")
-            .eq("enterprise_id", enterprise_id)
-            .order("submitted_at", desc=True)
-            .execute()
-        )
+        try:
+            result = (
+                client.table(self.TABLE)
+                .select("*")
+                .eq("enterprise_id", enterprise_id)
+                .order("submitted_at", desc=True)
+                .execute()
+            )
+        except APIError as e:
+            error_code, error_msg = self._extract_api_error(e)
+            if error_code in {"42501", "42P01"}:
+                logger.warning(f"Report submissions read denied for {self.TABLE}: {error_msg}")
+                raise DomainServiceUnavailableError(
+                    "Database access denied for report submissions. Please check Supabase permissions and migrations."
+                )
+            raise
         return [self._to_dict(row) for row in result.data] if result.data else []
 
     def list_by_period(self, period: str, enterprise_id: Optional[str] = None) -> list[dict]:

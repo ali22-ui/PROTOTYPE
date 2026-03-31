@@ -4,7 +4,7 @@
 -- 
 -- Created: 2026-03-31
 -- 
--- This migration creates a clean, simplified schema with 15 tables.
+-- This migration creates a clean, simplified schema with 16 tables.
 -- Run this in Supabase SQL Editor after backing up existing data.
 -- ============================================
 -- Enable UUID extension
@@ -108,6 +108,29 @@ CREATE POLICY "Allow update to enterprises" ON enterprises FOR
 UPDATE USING (true);
 CREATE POLICY "Allow delete to enterprises" ON enterprises FOR DELETE USING (true);
 CREATE POLICY "Allow service role full access to enterprises" ON enterprises FOR ALL USING (auth.role() = 'service_role');
+-- ============================================
+-- Table: enterprise_profiles (Compatibility Layer)
+-- ============================================
+CREATE TABLE enterprise_profiles (
+  id TEXT PRIMARY KEY REFERENCES enterprises(id) ON DELETE CASCADE,
+  business_permit_number TEXT,
+  owner_name TEXT,
+  owner_contact TEXT,
+  description TEXT,
+  logo_url TEXT,
+  settings JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX idx_enterprise_profiles_owner_name ON enterprise_profiles(owner_name);
+ALTER TABLE enterprise_profiles ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow read access to enterprise_profiles" ON enterprise_profiles FOR
+SELECT USING (true);
+CREATE POLICY "Allow insert to enterprise_profiles" ON enterprise_profiles FOR
+INSERT WITH CHECK (true);
+CREATE POLICY "Allow update to enterprise_profiles" ON enterprise_profiles FOR
+UPDATE USING (true);
+CREATE POLICY "Allow service role full access to enterprise_profiles" ON enterprise_profiles FOR ALL USING (auth.role() = 'service_role');
 -- ============================================
 -- Table: accounts (For Future Authentication)
 -- ============================================
@@ -476,6 +499,8 @@ CREATE TRIGGER update_lgus_updated_at BEFORE
 UPDATE ON lgus FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_enterprises_updated_at BEFORE
 UPDATE ON enterprises FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_enterprise_profiles_updated_at BEFORE
+UPDATE ON enterprise_profiles FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_accounts_updated_at BEFORE
 UPDATE ON accounts FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_cameras_updated_at BEFORE
@@ -522,21 +547,38 @@ ADD TABLE report_submissions;
 END IF;
 END $$;
 -- ============================================
+-- Grants: Ensure API roles can access schema objects
+-- ============================================
+GRANT USAGE ON SCHEMA public TO anon,
+  authenticated,
+  service_role;
+GRANT SELECT,
+  INSERT,
+  UPDATE,
+  DELETE ON ALL TABLES IN SCHEMA public TO anon,
+  authenticated,
+  service_role;
+GRANT USAGE,
+  SELECT ON ALL SEQUENCES IN SCHEMA public TO anon,
+  authenticated,
+  service_role;
+-- ============================================
 -- Schema Migration Complete
 -- ============================================
--- Tables created: 15
+-- Tables created: 16
 -- 1. lgus
 -- 2. barangays
 -- 3. enterprises
--- 4. accounts
--- 5. cameras
--- 6. detection_events
--- 7. visitor_statistics
--- 8. reporting_windows
--- 9. report_submissions
--- 10. authority_packages
--- 11. enterprise_action_tickets
--- 12. enterprise_compliance_actions
--- 13. enterprise_infractions
--- 14. audit_logs
--- 15. system_settings
+-- 4. enterprise_profiles
+-- 5. accounts
+-- 6. cameras
+-- 7. detection_events
+-- 8. visitor_statistics
+-- 9. reporting_windows
+-- 10. report_submissions
+-- 11. authority_packages
+-- 12. enterprise_action_tickets
+-- 13. enterprise_compliance_actions
+-- 14. enterprise_infractions
+-- 15. audit_logs
+-- 16. system_settings

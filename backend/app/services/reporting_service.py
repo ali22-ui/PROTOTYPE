@@ -113,7 +113,10 @@ def get_enterprise_report_history(enterprise_id: str):
         raise DomainNotFoundError("Enterprise account not found")
 
     target_id = enterprise_repository.resolve_enterprise_id(enterprise_id)
-    reports = report_submission_repo.list_by_enterprise(target_id)
+    try:
+        reports = report_submission_repo.list_by_enterprise(target_id)
+    except DomainServiceUnavailableError:
+        reports = []
     
     return {
         "enterprise_id": target_id,

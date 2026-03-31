@@ -7,12 +7,12 @@ def health_check():
     return {"status": "ok"}
 
 
-def get_overview():
-    return analytics_repository.get_overview_payload()
+def get_overview(month: str | None = None):
+    return analytics_repository.get_overview_payload(month)
 
 
-def get_reports():
-    return analytics_repository.get_reports_payload()
+def get_reports(month: str | None = None):
+    return analytics_repository.get_reports_payload(month)
 
 
 def get_logs():
