@@ -12,6 +12,7 @@ from app.services.camera_service import (
     set_camera_source as set_camera_source_service,
     stream_camera_relay as stream_camera_relay_service,
 )
+from app.services.ip_camera_service import get_ip_camera_service
 
 router = APIRouter(tags=["Camera"])
 ws_router = APIRouter(tags=["Camera WebSocket"])
@@ -71,3 +72,50 @@ async def ws_enterprise_camera_stream(
     enterprise_id: str,
 ):
     await ws_enterprise_camera_stream_service(websocket, enterprise_id)
+
+
+@router.get("/enterprise/camera/metrics")
+def get_camera_pipeline_metrics(
+    enterprise_id: str = "ent_archies_001",
+):
+    """
+    Get real-time camera pipeline performance metrics.
+    
+    Returns FPS, latency, frame drop rate, and other performance indicators
+    for the optimized real-time pipeline (PRD_016).
+    """
+    ip_service = get_ip_camera_service()
+    metrics = ip_service.get_pipeline_metrics(enterprise_id)
+    
+    if metrics is None:
+        return {
+            "enterprise_id": enterprise_id,
+            "status": "no_active_stream",
+            "message": "No active real-time stream for this enterprise",
+            "metrics": None,
+        }
+    
+    return {
+        "enterprise_id": enterprise_id,
+        "status": "active",
+        "metrics": metrics,
+    }
+
+
+@router.post("/enterprise/camera/stream/stop")
+def stop_camera_stream(
+    enterprise_id: str = "ent_archies_001",
+):
+    """
+    Stop the real-time camera stream for an enterprise.
+    
+    This releases resources and stops the background capture thread.
+    """
+    ip_service = get_ip_camera_service()
+    ip_service.stop_realtime_streamer(enterprise_id)
+    
+    return {
+        "enterprise_id": enterprise_id,
+        "status": "stopped",
+        "message": "Real-time stream stopped successfully",
+    }

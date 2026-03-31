@@ -1,20 +1,31 @@
 """
 IP Camera Service for ingesting video from Android IP Webcam.
 Supports OpenCV VideoCapture as primary and requests-based MJPEG fallback.
+
+Now includes optimized real-time pipeline (PRD_016) with:
+- Threaded frame capture
+- Minimal buffering (CAP_PROP_BUFFERSIZE = 1)
+- Adaptive frame skipping
+- FPS monitoring
 """
 import asyncio
 import logging
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import AsyncGenerator, Generator
+from typing import AsyncGenerator, Callable, Generator
 
+import numpy as np
 import requests
 
 from app.core.config import CameraSourceMode, get_settings
 
 logger = logging.getLogger(__name__)
+
+# Feature flag for real-time pipeline (PRD_016)
+USE_REALTIME_PIPELINE = True
 
 
 class SourceStatus(str, Enum):
@@ -42,6 +53,7 @@ class SourceState:
     health: IPCameraHealth = field(default_factory=IPCameraHealth)
     relay_url: str | None = None
     last_frame_at: datetime | None = None
+    pipeline_metrics: dict | None = None  # Real-time pipeline metrics
 
 
 class IPCameraService:
@@ -51,6 +63,10 @@ class IPCameraService:
         self._settings = get_settings()
         self._opencv_available = self._check_opencv()
         self._source_states: dict[str, SourceState] = {}
+        self._realtime_streamers: dict[str, "RealtimeMJPEGStreamer"] = {}
+        self._stream_consumers: dict[str, int] = {}
+        self._streamer_lock = threading.Lock()
+        self._inference_callback: Callable[[np.ndarray], np.ndarray] | None = None
 
     def _check_opencv(self) -> bool:
         """Check if OpenCV is available."""
@@ -176,7 +192,7 @@ class IPCameraService:
             return None
 
     def stream_mjpeg_opencv(self, enterprise_id: str) -> Generator[bytes, None, None]:
-        """Stream MJPEG frames using OpenCV VideoCapture."""
+        """Stream MJPEG frames using OpenCV VideoCapture (legacy method)."""
         if not self._opencv_available:
             logger.error("OpenCV not available for streaming")
             return
@@ -190,6 +206,9 @@ class IPCameraService:
 
         state = self.get_source_state(enterprise_id)
         cap = cv2.VideoCapture(url)
+        
+        # PRD_016: Set minimal buffer size
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
         if not cap.isOpened():
             logger.error(f"Failed to open video stream: {url}")
@@ -288,9 +307,117 @@ class IPCameraService:
             state.health.status = SourceStatus.DEGRADED
             state.health.last_error = str(e)
 
+    def stream_mjpeg_realtime(self, enterprise_id: str) -> Generator[bytes, None, None]:
+        """
+        Stream MJPEG using the optimized real-time pipeline (PRD_016).
+        
+        This method uses threaded capture with minimal buffering to eliminate
+        the lag accumulation problem in traditional OpenCV pipelines.
+        """
+        if not self._opencv_available:
+            logger.error("OpenCV not available for streaming")
+            return
+
+        from app.services.realtime_camera_pipeline import RealtimeMJPEGStreamer
+
+        url = self.build_video_url()
+        if not self._settings.is_ip_webcam_url_safe(url):
+            logger.error("Video URL not in allowed range")
+            return
+
+        state = self.get_source_state(enterprise_id)
+
+        with self._streamer_lock:
+            streamer = self._realtime_streamers.get(enterprise_id)
+            if streamer is not None and not streamer.is_running:
+                streamer.stop()
+                self._realtime_streamers.pop(enterprise_id, None)
+                streamer = None
+
+            if streamer is None:
+                streamer = RealtimeMJPEGStreamer(
+                    source=url,
+                    inference_callback=self._inference_callback,
+                    jpeg_quality=80,
+                )
+                try:
+                    streamer.start()
+                    self._realtime_streamers[enterprise_id] = streamer
+                    logger.info(f"Started real-time streamer for enterprise {enterprise_id}")
+                except Exception as e:
+                    logger.error(f"Failed to start real-time streamer: {e}")
+                    state.health.status = SourceStatus.OFFLINE
+                    state.health.last_error = str(e)
+                    return
+
+            self._stream_consumers[enterprise_id] = self._stream_consumers.get(enterprise_id, 0) + 1
+
+        state.health.status = SourceStatus.ONLINE
+        state.health.reachable = True
+
+        try:
+            for frame_bytes in streamer.stream_frames():
+                state.last_frame_at = datetime.now()
+                
+                # Update metrics
+                if streamer.metrics:
+                    state.pipeline_metrics = streamer.metrics.to_dict()
+                
+                yield frame_bytes
+        except Exception as e:
+            logger.error(f"Real-time stream error: {e}")
+            state.health.status = SourceStatus.DEGRADED
+            state.health.last_error = str(e)
+        finally:
+            streamer_to_stop = None
+            with self._streamer_lock:
+                current_consumers = self._stream_consumers.get(enterprise_id, 0) - 1
+                if current_consumers <= 0:
+                    self._stream_consumers.pop(enterprise_id, None)
+                    existing = self._realtime_streamers.get(enterprise_id)
+                    if existing is streamer:
+                        streamer_to_stop = self._realtime_streamers.pop(enterprise_id, None)
+                else:
+                    self._stream_consumers[enterprise_id] = current_consumers
+
+            if streamer_to_stop is not None:
+                streamer_to_stop.stop()
+                logger.info(f"Stopped real-time streamer for enterprise {enterprise_id} after stream close")
+
+    def stop_realtime_streamer(self, enterprise_id: str):
+        """Stop the real-time streamer for an enterprise."""
+        if enterprise_id in self._realtime_streamers:
+            self._realtime_streamers[enterprise_id].stop()
+            del self._realtime_streamers[enterprise_id]
+            self._stream_consumers.pop(enterprise_id, None)
+            logger.info(f"Stopped real-time streamer for enterprise {enterprise_id}")
+
+    def set_inference_callback(self, callback: Callable[[np.ndarray], np.ndarray] | None):
+        """
+        Set the ML inference callback for real-time processing.
+        
+        The callback should accept a frame (numpy array) and return
+        a processed frame (numpy array).
+        """
+        self._inference_callback = callback
+        logger.info(f"Inference callback {'set' if callback else 'cleared'}")
+
+    def get_pipeline_metrics(self, enterprise_id: str) -> dict | None:
+        """Get real-time pipeline metrics for an enterprise."""
+        if enterprise_id in self._realtime_streamers:
+            streamer = self._realtime_streamers[enterprise_id]
+            if streamer.metrics:
+                return streamer.metrics.to_dict()
+        
+        state = self.get_source_state(enterprise_id)
+        return state.pipeline_metrics
+
     def stream_mjpeg(self, enterprise_id: str) -> Generator[bytes, None, None]:
         """Stream MJPEG using best available method."""
-        if self._opencv_available:
+        # PRD_016: Use real-time pipeline when enabled and OpenCV available
+        if USE_REALTIME_PIPELINE and self._opencv_available:
+            yield from self.stream_mjpeg_realtime(enterprise_id)
+        elif self._opencv_available:
             yield from self.stream_mjpeg_opencv(enterprise_id)
         else:
             yield from self.stream_mjpeg_requests(enterprise_id)
