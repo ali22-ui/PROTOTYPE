@@ -26,6 +26,25 @@ import type {
   VisitorStats,
 } from '@/types';
 
+interface DbCameraLogRecord {
+  id: string;
+  unique_id: string;
+  time_in_iso: string;
+  time_out_iso: string;
+  duration_hours: number;
+  classification: string;
+  male_count: number;
+  female_count: number;
+  total_count: number;
+}
+
+interface RecentDetectionFeedEvent {
+  id: string;
+  time_iso: string;
+  frame: number;
+  details: string;
+}
+
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
 export const ENTERPRISE_SESSION_TOKEN_KEY = 'enterprise-session-token';
 export const LGU_SESSION_TOKEN_KEY = 'lgu-session-token';
@@ -286,6 +305,32 @@ const adaptDetailedRowToCameraLog = (row: DetailedDetectionRow, index: number): 
   };
 };
 
+const adaptDbCameraLogToCameraLog = (row: DbCameraLogRecord, index: number): CameraLog => {
+  const timeInIso = row.time_in_iso;
+  const timeOutIso = row.time_out_iso;
+  const durationHours = Number(row.duration_hours ?? 0);
+  const classification: CameraLog['classification'] =
+    String(row.classification || '').toLowerCase() === 'tourist' ? 'Tourist' : 'Visitor';
+  const maleCount = Number(row.male_count ?? 0);
+  const femaleCount = Number(row.female_count ?? 0);
+  const totalCount = Number(row.total_count ?? Math.max(1, maleCount + femaleCount));
+
+  return {
+    id: row.id || `${row.unique_id}-${index + 1}`,
+    uniqueId: row.unique_id || `CAM-${String(index + 1).padStart(5, '0')}`,
+    timeInIso,
+    timeOutIso,
+    timeIn: formatDateTime(timeInIso),
+    timeOut: formatDateTime(timeOutIso),
+    durationHours,
+    durationLabel: formatDuration(durationHours),
+    classification,
+    maleCount,
+    femaleCount,
+    totalCount,
+  };
+};
+
 
 export const getApiBaseUrl = (): string => API_BASE_URL;
 
@@ -418,16 +463,59 @@ export const fetchCameraStream = async (enterpriseId: string): Promise<CameraStr
 };
 
 export const fetchCameraLogs = async (enterpriseId: string, month?: string): Promise<CameraLog[]> => {
+  try {
+    const response = await http.get<DbCameraLogRecord[]>('/detections/camera-logs', {
+      params: {
+        enterprise_id: enterpriseId,
+        month,
+        limit: 1000,
+      },
+    });
+
+    const dbRows = response.data || [];
+    if (dbRows.length > 0) {
+      return dbRows
+        .map((row, index) => adaptDbCameraLogToCameraLog(row, index))
+        .sort((left, right) => right.timeInIso.localeCompare(left.timeInIso));
+    }
+  } catch {
+    // Fallback to dashboard rows when DB query is unavailable.
+  }
+
   const dashboard = await fetchEnterpriseDashboard(enterpriseId);
   const rows = dashboard.detailed_detection_rows || [];
-
-  const filteredRows = month
-    ? rows.filter((row) => row.date.startsWith(month))
-    : rows;
+  const filteredRows = month ? rows.filter((row) => row.date.startsWith(month)) : rows;
 
   return filteredRows
     .map((row, index) => adaptDetailedRowToCameraLog(row, index))
     .sort((left, right) => right.timeInIso.localeCompare(left.timeInIso));
+};
+
+export const fetchCameraMonitoringEvents = async (
+  enterpriseId: string,
+  month = getCurrentMonth(),
+  limit = 24,
+): Promise<CameraMonitoringLayoutData['events']> => {
+  try {
+    const response = await http.get<RecentDetectionFeedEvent[]>('/detections/recent', {
+      params: {
+        enterprise_id: enterpriseId,
+        month,
+        limit,
+      },
+    });
+
+    return (response.data || [])
+      .sort((left, right) => right.time_iso.localeCompare(left.time_iso))
+      .map((event) => ({
+        id: event.id,
+        timeLabel: formatDateTime(event.time_iso),
+        frame: event.frame,
+        details: event.details,
+      }));
+  } catch {
+    return [];
+  }
 };
 
 export const submitMonthlyReport = async (
@@ -616,17 +704,20 @@ export const fetchCameraMonitoringLayoutData = async (
   enterpriseId: string,
   month = getCurrentMonth(),
 ): Promise<CameraMonitoringLayoutData> => {
-  const [stream, logs] = await Promise.all([
+  const [stream, logs, recentEvents] = await Promise.all([
     fetchCameraStream(enterpriseId),
     fetchCameraLogs(enterpriseId, month),
+    fetchCameraMonitoringEvents(enterpriseId, month, 24),
   ]);
 
-  const eventRows = logs.slice(0, 24).map((log, index) => ({
-    id: `${log.id}-${index}`,
-    timeLabel: log.timeIn,
-    frame: Math.max(1, stream.frame - index),
-    details: `${log.maleCount} Male ${log.classification}, ${log.femaleCount} Female ${log.classification === 'Tourist' ? 'Tourist' : 'Local Resident'}`,
-  }));
+  const eventRows = recentEvents.length > 0
+    ? recentEvents
+    : logs.slice(0, 24).map((log, index) => ({
+      id: `${log.id}-${index}`,
+      timeLabel: log.timeIn,
+      frame: Math.max(1, stream.frame - index),
+      details: `${log.maleCount} Male ${log.classification}, ${log.femaleCount} Female ${log.classification === 'Tourist' ? 'Tourist' : 'Local Resident'}`,
+    }));
 
   const breakdownMap = new Map<string, number>();
   stream.boxes.forEach((box) => {

@@ -12,6 +12,7 @@ REPORTING_WINDOWS = {}
 CAMERA_RUNTIME = {}
 CAMERA_SUBSCRIBERS = {}
 CAMERA_BROADCAST_TASKS = {}
+CAMERA_RECENT_EVENTS = {}
 LGU_REPORT_PACKS = []
 AUTHORITY_PACKAGES = {}
 ENTERPRISE_ACTION_LOGS = []
@@ -30,6 +31,9 @@ def reset_runtime_state() -> None:
     CAMERA_SUBSCRIBERS.update({enterprise_id: set() for enterprise_id in CAMERA_RUNTIME})
 
     CAMERA_BROADCAST_TASKS.clear()
+
+    CAMERA_RECENT_EVENTS.clear()
+    CAMERA_RECENT_EVENTS.update({enterprise_id: [] for enterprise_id in CAMERA_RUNTIME})
 
     LGU_REPORT_PACKS.clear()
     LGU_REPORT_PACKS.extend(deepcopy(core.LGU_REPORT_PACKS))
@@ -50,6 +54,7 @@ def reset_telemetry_state() -> None:
             "events": [],
             "latest_frame": None,
         }
+        CAMERA_RECENT_EVENTS[enterprise_id] = []
 
     # Clear camera source states to force re-initialization
     CAMERA_SOURCE_STATES.clear()
@@ -71,6 +76,17 @@ def get_camera_subscribers():
 
 def get_camera_broadcast_tasks():
     return CAMERA_BROADCAST_TASKS
+
+
+def get_camera_recent_events():
+    return CAMERA_RECENT_EVENTS
+
+
+def append_camera_event(enterprise_id: str, event_text: str, max_items: int = 100) -> None:
+    events = CAMERA_RECENT_EVENTS.setdefault(enterprise_id, [])
+    events.insert(0, event_text)
+    if len(events) > max_items:
+        del events[max_items:]
 
 
 def get_reporting_windows():

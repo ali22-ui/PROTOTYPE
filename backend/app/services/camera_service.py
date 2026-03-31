@@ -29,6 +29,7 @@ def _get_camera_frame_response(enterprise_id: str) -> dict:
 
     ip_service = get_ip_camera_service()
     state = ip_service.get_source_state(enterprise_id)
+    recent_events = runtime_store.get_camera_recent_events().get(enterprise_id, [])
 
     camera_name = profile["cameras"][0]["name"] if profile.get("cameras") else "Camera"
 
@@ -46,7 +47,7 @@ def _get_camera_frame_response(enterprise_id: str) -> dict:
         "source_status": state.health.status.value if state.health else "unknown",
         "last_frame_at": state.last_frame_at.isoformat() if state.last_frame_at else None,
         "boxes": [],  # No synthetic boxes - only real detections
-        "events": [],  # No synthetic events - only real detection events
+        "events": recent_events[:100],
     }
 
     # Add diagnostic info when source is unavailable

@@ -152,6 +152,27 @@ class VisitorStatistics(BaseModel):
     dedup_stats: Optional[DeduplicationStats] = None
 
 
+class CameraLogRecord(BaseModel):
+    """Normalized camera log session row sourced from database detections."""
+    id: str
+    unique_id: str
+    time_in_iso: str
+    time_out_iso: str
+    duration_hours: float
+    classification: str
+    male_count: int
+    female_count: int
+    total_count: int
+
+
+class RecentDetectionFeedEvent(BaseModel):
+    """Recent detection event row for monitoring feed surfaces."""
+    id: str
+    time_iso: str
+    frame: int
+    details: str
+
+
 class CameraFrame(BaseModel):
     """Live camera frame data for frontend display."""
     enterprise_id: str

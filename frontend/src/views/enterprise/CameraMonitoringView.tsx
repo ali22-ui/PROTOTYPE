@@ -5,7 +5,7 @@ import ErrorState from '@/components/ui/ErrorState';
 import LoadingState from '@/components/ui/LoadingState';
 import { CameraPage } from '@/features/enterprise/camera';
 import { useGlobalCamera } from '@/features/enterprise/camera/context/CameraContext';
-import { fetchCameraMonitoringLayoutData } from '@/services/api';
+import { fetchCameraMonitoringEvents, fetchCameraMonitoringLayoutData } from '@/services/api';
 import type { CameraMonitoringLayoutData } from '@/types';
 
 export default function CameraMonitoringView(): JSX.Element {
@@ -16,6 +16,8 @@ export default function CameraMonitoringView(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [layoutData, setLayoutData] =
     useState<CameraMonitoringLayoutData | null>(null);
+  const [detectionEvents, setDetectionEvents] =
+    useState<CameraMonitoringLayoutData['events']>([]);
 
   const loadLayout = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -24,6 +26,7 @@ export default function CameraMonitoringView(): JSX.Element {
     try {
       const payload = await fetchCameraMonitoringLayoutData(user.enterpriseId);
       setLayoutData(payload);
+      setDetectionEvents(payload.events.slice(0, MAX_EVENT_ROWS));
     } catch (err) {
       const message =
         err instanceof Error
@@ -39,6 +42,28 @@ export default function CameraMonitoringView(): JSX.Element {
     void loadLayout();
   }, [loadLayout]);
 
+  useEffect(() => {
+    let mounted = true;
+
+    const refreshEvents = async (): Promise<void> => {
+      const rows = await fetchCameraMonitoringEvents(user.enterpriseId, undefined, MAX_EVENT_ROWS);
+      if (!mounted || rows.length === 0) {
+        return;
+      }
+      setDetectionEvents(rows.slice(0, MAX_EVENT_ROWS));
+    };
+
+    void refreshEvents();
+    const intervalId = window.setInterval(() => {
+      void refreshEvents();
+    }, 7000);
+
+    return () => {
+      mounted = false;
+      window.clearInterval(intervalId);
+    };
+  }, [user.enterpriseId]);
+
   if (loading) {
     return <LoadingState label="Loading camera monitoring workspace..." />;
   }
@@ -53,8 +78,8 @@ export default function CameraMonitoringView(): JSX.Element {
   }
 
   const hasDetectionActivity =
-    layoutData.streamHealth.activeTracks > 0 || layoutData.events.length > 0;
-  const visibleEvents = layoutData.events.slice(0, MAX_EVENT_ROWS);
+    layoutData.streamHealth.activeTracks > 0 || detectionEvents.length > 0;
+  const visibleEvents = detectionEvents.slice(0, MAX_EVENT_ROWS);
 
   return (
     <div className="space-y-4">
@@ -158,8 +183,8 @@ export default function CameraMonitoringView(): JSX.Element {
         </div>
 
         <div className="overflow-hidden rounded-xl bg-brand-bg/45">
-          <div className="max-h-90 overflow-y-auto">
-            <table className="min-w-full text-sm">
+          <div className="max-h-90 overflow-auto">
+            <table className="min-w-[720px] w-full text-sm">
               <thead className="sticky top-0 z-20 bg-brand-dark/90 text-left text-xs uppercase tracking-wide text-white shadow-sm backdrop-blur-sm">
                 <tr>
                   <th className="bg-brand-dark/90 px-3 py-3 leading-tight">
