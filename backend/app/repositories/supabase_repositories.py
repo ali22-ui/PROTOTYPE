@@ -63,6 +63,23 @@ class SupabaseRepository:
         return error_code, error_message
 
     @staticmethod
+    def _is_access_or_schema_error(error_code: str, error_message: str) -> bool:
+        """Identify Supabase permission/schema errors across APIError variants."""
+        normalized_code = str(error_code or "").upper()
+        if normalized_code in {"42501", "42P01", "PGRST205"}:
+            return True
+
+        lowered = str(error_message or "").lower()
+        return (
+            "permission denied" in lowered
+            or "could not find the table" in lowered
+            or "relation" in lowered and "does not exist" in lowered
+            or "schema cache" in lowered
+            or "42p01" in lowered
+            or "42501" in lowered
+        )
+
+    @staticmethod
     def _chunk_values(values: list[str], chunk_size: int = 100) -> list[list[str]]:
         """Split values into chunks for batched PostgREST filters."""
         if chunk_size <= 0:
@@ -92,8 +109,8 @@ class ReportingWindowRepository(SupabaseRepository):
             return None
         except APIError as e:
             error_code, error_msg = self._extract_api_error(e)
-            
-            if error_code == "42501":  # Permission denied
+
+            if self._is_access_or_schema_error(error_code, error_msg):
                 logger.warning(f"Permission denied for {self.TABLE}: {error_msg}")
                 raise DomainServiceUnavailableError(
                     f"Database access denied for reporting windows. Please check Supabase RLS policies."
@@ -112,8 +129,8 @@ class ReportingWindowRepository(SupabaseRepository):
             return [self._to_dict(row) for row in result.data] if result.data else []
         except APIError as e:
             error_code, error_msg = self._extract_api_error(e)
-            
-            if error_code == "42501":  # Permission denied
+
+            if self._is_access_or_schema_error(error_code, error_msg):
                 logger.warning(f"Permission denied for {self.TABLE}: {error_msg}")
                 raise DomainServiceUnavailableError(
                     f"Database access denied for reporting windows. Please check Supabase RLS policies."
@@ -143,12 +160,17 @@ class ReportingWindowRepository(SupabaseRepository):
         except APIError as e:
             error_code, error_msg = self._extract_api_error(e)
 
-            if error_code == "42501":
+            if self._is_access_or_schema_error(error_code, error_msg):
                 logger.warning(f"Permission denied for {self.TABLE}: {error_msg}")
                 raise DomainServiceUnavailableError(
                     "Database access denied for reporting windows. Please check Supabase RLS policies."
                 )
             raise
+        except Exception as e:
+            logger.warning(f"Transient read failure for {self.TABLE}: {e}")
+            raise DomainServiceUnavailableError(
+                "Temporary database read failure for reporting windows."
+            ) from e
 
     def list_current_by_enterprises(self, enterprise_ids: list[str]) -> list[dict]:
         """List current-period reporting windows for the provided enterprise IDs."""
@@ -290,10 +312,19 @@ class ReportSubmissionRepository(SupabaseRepository):
     def get_by_id(self, report_id: str) -> Optional[dict]:
         """Get a report by its ID."""
         client = self._get_client()
-        result = client.table(self.TABLE).select("*").eq("id", report_id).execute()
-        if result.data and len(result.data) > 0:
-            return self._to_dict(result.data[0])
-        return None
+        try:
+            result = client.table(self.TABLE).select("*").eq("id", report_id).execute()
+            if result.data and len(result.data) > 0:
+                return self._to_dict(result.data[0])
+            return None
+        except APIError as e:
+            error_code, error_msg = self._extract_api_error(e)
+            if self._is_access_or_schema_error(error_code, error_msg):
+                logger.warning(f"Report submissions read denied for {self.TABLE}: {error_msg}")
+                raise DomainServiceUnavailableError(
+                    "Database access denied for report submissions. Please check Supabase permissions and migrations."
+                )
+            raise
 
     def list_by_enterprise(self, enterprise_id: str) -> list[dict]:
         """List all reports for an enterprise."""
@@ -308,7 +339,7 @@ class ReportSubmissionRepository(SupabaseRepository):
             )
         except APIError as e:
             error_code, error_msg = self._extract_api_error(e)
-            if error_code in {"42501", "42P01"}:
+            if self._is_access_or_schema_error(error_code, error_msg):
                 logger.warning(f"Report submissions read denied for {self.TABLE}: {error_msg}")
                 raise DomainServiceUnavailableError(
                     "Database access denied for report submissions. Please check Supabase permissions and migrations."
@@ -319,29 +350,56 @@ class ReportSubmissionRepository(SupabaseRepository):
     def list_by_period(self, period: str, enterprise_id: Optional[str] = None) -> list[dict]:
         """List reports for a period, optionally filtered by enterprise."""
         client = self._get_client()
-        query = client.table(self.TABLE).select("*").eq("period", period)
-        if enterprise_id:
-            query = query.eq("enterprise_id", enterprise_id)
-        result = query.order("submitted_at", desc=True).execute()
-        return [self._to_dict(row) for row in result.data] if result.data else []
+        try:
+            query = client.table(self.TABLE).select("*").eq("period", period)
+            if enterprise_id:
+                query = query.eq("enterprise_id", enterprise_id)
+            result = query.order("submitted_at", desc=True).execute()
+            return [self._to_dict(row) for row in result.data] if result.data else []
+        except APIError as e:
+            error_code, error_msg = self._extract_api_error(e)
+            if self._is_access_or_schema_error(error_code, error_msg):
+                logger.warning(f"Report submissions read denied for {self.TABLE}: {error_msg}")
+                raise DomainServiceUnavailableError(
+                    "Database access denied for report submissions. Please check Supabase permissions and migrations."
+                )
+            raise
 
     def list_all(self) -> list[dict]:
         """List all reports."""
         client = self._get_client()
-        result = client.table(self.TABLE).select("*").order("submitted_at", desc=True).execute()
-        return [self._to_dict(row) for row in result.data] if result.data else []
+        try:
+            result = client.table(self.TABLE).select("*").order("submitted_at", desc=True).execute()
+            return [self._to_dict(row) for row in result.data] if result.data else []
+        except APIError as e:
+            error_code, error_msg = self._extract_api_error(e)
+            if self._is_access_or_schema_error(error_code, error_msg):
+                logger.warning(f"Report submissions read denied for {self.TABLE}: {error_msg}")
+                raise DomainServiceUnavailableError(
+                    "Database access denied for report submissions. Please check Supabase permissions and migrations."
+                )
+            raise
 
     def exists(self, enterprise_id: str, period: str) -> bool:
         """Check if a report exists for enterprise and period."""
         client = self._get_client()
-        result = (
-            client.table(self.TABLE)
-            .select("id")
-            .eq("enterprise_id", enterprise_id)
-            .eq("period", period)
-            .execute()
-        )
-        return bool(result.data and len(result.data) > 0)
+        try:
+            result = (
+                client.table(self.TABLE)
+                .select("id")
+                .eq("enterprise_id", enterprise_id)
+                .eq("period", period)
+                .execute()
+            )
+            return bool(result.data and len(result.data) > 0)
+        except APIError as e:
+            error_code, error_msg = self._extract_api_error(e)
+            if self._is_access_or_schema_error(error_code, error_msg):
+                logger.warning(f"Report submissions read denied for {self.TABLE}: {error_msg}")
+                raise DomainServiceUnavailableError(
+                    "Database access denied for report submissions. Please check Supabase permissions and migrations."
+                )
+            raise
 
     def list_submitted_enterprise_ids_for_period(self, period: str, enterprise_ids: list[str]) -> set[str]:
         """Return enterprise IDs that have submitted a report in the given period."""
@@ -372,12 +430,17 @@ class ReportSubmissionRepository(SupabaseRepository):
             return submitted_enterprises
         except APIError as e:
             error_code, error_msg = self._extract_api_error(e)
-            if error_code in {"42501", "42P01"}:
+            if self._is_access_or_schema_error(error_code, error_msg):
                 logger.warning(f"Report submissions read denied for {self.TABLE}: {error_msg}")
                 raise DomainServiceUnavailableError(
                     "Database access denied for report submissions. Please check Supabase permissions and migrations."
                 )
             raise
+        except Exception as e:
+            logger.warning(f"Transient read failure for {self.TABLE}: {e}")
+            raise DomainServiceUnavailableError(
+                "Temporary database read failure for report submissions."
+            ) from e
 
     def create(
         self,
