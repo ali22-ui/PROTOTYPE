@@ -62,6 +62,13 @@ class SupabaseRepository:
 
         return error_code, error_message
 
+    @staticmethod
+    def _chunk_values(values: list[str], chunk_size: int = 100) -> list[list[str]]:
+        """Split values into chunks for batched PostgREST filters."""
+        if chunk_size <= 0:
+            return [values]
+        return [values[index:index + chunk_size] for index in range(0, len(values), chunk_size)]
+
 
 class ReportingWindowRepository(SupabaseRepository):
     """Repository for reporting window operations."""
@@ -112,6 +119,40 @@ class ReportingWindowRepository(SupabaseRepository):
                     f"Database access denied for reporting windows. Please check Supabase RLS policies."
                 )
             raise
+
+    def list_by_period_for_enterprises(self, period: str, enterprise_ids: list[str]) -> list[dict]:
+        """List reporting windows for a period filtered to the provided enterprise IDs."""
+        if not enterprise_ids:
+            return []
+
+        client = self._get_client()
+        rows: list[dict] = []
+
+        try:
+            for chunk in self._chunk_values(enterprise_ids):
+                result = (
+                    client.table(self.TABLE)
+                    .select("*")
+                    .eq("period", period)
+                    .in_("enterprise_id", chunk)
+                    .execute()
+                )
+                if result.data:
+                    rows.extend(result.data)
+            return [self._to_dict(row) for row in rows]
+        except APIError as e:
+            error_code, error_msg = self._extract_api_error(e)
+
+            if error_code == "42501":
+                logger.warning(f"Permission denied for {self.TABLE}: {error_msg}")
+                raise DomainServiceUnavailableError(
+                    "Database access denied for reporting windows. Please check Supabase RLS policies."
+                )
+            raise
+
+    def list_current_by_enterprises(self, enterprise_ids: list[str]) -> list[dict]:
+        """List current-period reporting windows for the provided enterprise IDs."""
+        return self.list_by_period_for_enterprises(self._current_period(), enterprise_ids)
 
     def list_all_current(self) -> list[dict]:
         """List all reporting windows for the current period."""
@@ -301,6 +342,42 @@ class ReportSubmissionRepository(SupabaseRepository):
             .execute()
         )
         return bool(result.data and len(result.data) > 0)
+
+    def list_submitted_enterprise_ids_for_period(self, period: str, enterprise_ids: list[str]) -> set[str]:
+        """Return enterprise IDs that have submitted a report in the given period."""
+        if not enterprise_ids:
+            return set()
+
+        client = self._get_client()
+        submitted_enterprises: set[str] = set()
+
+        try:
+            for chunk in self._chunk_values(enterprise_ids):
+                result = (
+                    client.table(self.TABLE)
+                    .select("enterprise_id")
+                    .eq("period", period)
+                    .in_("enterprise_id", chunk)
+                    .execute()
+                )
+
+                if not result.data:
+                    continue
+
+                for row in result.data:
+                    enterprise_id = row.get("enterprise_id")
+                    if isinstance(enterprise_id, str) and enterprise_id:
+                        submitted_enterprises.add(enterprise_id)
+
+            return submitted_enterprises
+        except APIError as e:
+            error_code, error_msg = self._extract_api_error(e)
+            if error_code in {"42501", "42P01"}:
+                logger.warning(f"Report submissions read denied for {self.TABLE}: {error_msg}")
+                raise DomainServiceUnavailableError(
+                    "Database access denied for report submissions. Please check Supabase permissions and migrations."
+                )
+            raise
 
     def create(
         self,

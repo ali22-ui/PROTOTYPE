@@ -1,4 +1,5 @@
 from datetime import datetime
+import logging
 
 from domain_exceptions import (
     DomainConflictError,
@@ -19,6 +20,9 @@ from app.repositories.supabase_repositories import (
 )
 from app.schemas.enterprise import EnterpriseActionRequest, EnterpriseReportSubmission
 from app.schemas.lgu import ReportingWindowAction, ReportingWindowBulkAction
+
+
+logger = logging.getLogger(__name__)
 
 
 def _require_supabase() -> None:
@@ -391,13 +395,66 @@ def get_lgu_enterprise_accounts(period: str | None = None):
     _require_supabase()
 
     target_period = period or datetime.now().strftime("%Y-%m")
+    current_period = datetime.now().strftime("%Y-%m")
     accounts = []
+    warnings: list[str] = []
 
-    for item in enterprise_repository.list_enterprise_accounts():
-        window = reporting_window_repo.get_by_enterprise(item["enterprise_id"], target_period)
+    enterprise_accounts = enterprise_repository.list_enterprise_accounts()
+    enterprise_ids = [item["enterprise_id"] for item in enterprise_accounts]
+
+    windows_by_enterprise: dict[str, dict] = {}
+    current_windows_by_enterprise: dict[str, dict] = {}
+    submitted_enterprises: set[str] = set()
+
+    try:
+        period_windows = reporting_window_repo.list_by_period_for_enterprises(target_period, enterprise_ids)
+        windows_by_enterprise = {
+            str(row.get("enterprise_id")): row
+            for row in period_windows
+            if isinstance(row.get("enterprise_id"), str)
+        }
+    except Exception as exc:
+        logger.warning("Failed to batch-load reporting windows for period %s: %s", target_period, exc, exc_info=True)
+        warnings.append(
+            "Reporting window status is partially unavailable due to a temporary upstream database error."
+        )
+
+    missing_period_ids = [enterprise_id for enterprise_id in enterprise_ids if enterprise_id not in windows_by_enterprise]
+    if missing_period_ids and target_period != current_period:
+        try:
+            current_windows = reporting_window_repo.list_current_by_enterprises(missing_period_ids)
+            current_windows_by_enterprise = {
+                str(row.get("enterprise_id")): row
+                for row in current_windows
+                if isinstance(row.get("enterprise_id"), str)
+            }
+        except Exception as exc:
+            logger.warning(
+                "Failed to batch-load fallback current-period reporting windows: %s",
+                exc,
+                exc_info=True,
+            )
+            warnings.append(
+                "Fallback reporting window status is unavailable for some enterprises due to a temporary upstream database error."
+            )
+
+    try:
+        submitted_enterprises = report_submission_repo.list_submitted_enterprise_ids_for_period(
+            target_period,
+            enterprise_ids,
+        )
+    except Exception as exc:
+        logger.warning("Failed to batch-load report submission flags for period %s: %s", target_period, exc, exc_info=True)
+        warnings.append(
+            "Submission status is partially unavailable due to a temporary upstream database error."
+        )
+
+    for item in enterprise_accounts:
+        enterprise_id = item["enterprise_id"]
+        window = windows_by_enterprise.get(enterprise_id)
         if not window:
-            window = reporting_window_repo.get_by_enterprise_current(item["enterprise_id"])
-        has_report = report_submission_repo.exists(item["enterprise_id"], target_period)
+            window = current_windows_by_enterprise.get(enterprise_id)
+        has_report = enterprise_id in submitted_enterprises
 
         if not window:
             window = {"period": target_period, "status": "CLOSED"}
@@ -414,4 +471,5 @@ def get_lgu_enterprise_accounts(period: str | None = None):
     return {
         "accounts": accounts,
         "period": target_period,
+        "warning": " ".join(dict.fromkeys(warnings)) if warnings else None,
     }
