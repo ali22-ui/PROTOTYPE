@@ -1,8 +1,14 @@
+import logging
+from datetime import datetime
+
 from fastapi import APIRouter, Body
+from postgrest.exceptions import APIError
 
 from domain_exceptions import DomainNotFoundError, DomainServiceUnavailableError
 
 from app.core.supabase import get_supabase_client, is_supabase_available
+from app.repositories import enterprise_repository
+from app.repositories.supabase_repositories import reporting_window_repo, system_settings_repo
 from app.schemas.enterprise import (
     EnterpriseAccountSettings,
     EnterpriseActionRequest,
@@ -25,11 +31,78 @@ from app.services.reporting_service import get_enterprise_report_history as get_
 from app.services.reporting_service import submit_enterprise_report as submit_enterprise_report_service
 
 router = APIRouter(tags=["Enterprise"])
+logger = logging.getLogger(__name__)
+OPEN_REPORTING_STATUSES = {"OPEN", "REMIND", "WARN", "RENOTIFY"}
+
+
+def _is_supabase_access_error(exc: Exception) -> bool:
+    if isinstance(exc, APIError):
+        payload = exc.args[0] if exc.args else None
+        if isinstance(payload, dict):
+            code = str(payload.get("code") or "").upper()
+            if code in {"42501", "42P01", "PGRST205"}:
+                return True
+
+    lowered = str(exc).lower()
+    return (
+        "permission denied" in lowered
+        or "42501" in lowered
+        or "42p01" in lowered
+        or "does not exist" in lowered
+        or "could not find the table" in lowered
+        or "schema cache" in lowered
+    )
 
 
 def _require_supabase():
     if not is_supabase_available():
         raise DomainServiceUnavailableError("Supabase is required for enterprise account workflows")
+
+
+def _build_reporting_status_compat_payload(
+    enterprise_id: str,
+    month: str | None,
+) -> dict[str, object]:
+    target_month = (month or datetime.now().strftime("%Y-%m")).strip()
+
+    window: dict[str, object] | None = None
+    try:
+        window = reporting_window_repo.get_by_enterprise(enterprise_id, target_month)
+        if not window:
+            window = reporting_window_repo.get_by_enterprise_current(enterprise_id)
+    except DomainServiceUnavailableError:
+        logger.warning("Reporting window access denied; using runtime fallback for status compatibility")
+        window = enterprise_repository.get_reporting_window(enterprise_id)
+    except Exception as exc:
+        if not _is_supabase_access_error(exc):
+            raise
+        logger.warning("Reporting window query failed; using runtime fallback for status compatibility")
+        window = enterprise_repository.get_reporting_window(enterprise_id)
+
+    global_open = False
+    try:
+        global_state = system_settings_repo.get_reporting_window_state()
+        global_open = bool(global_state.get("is_reporting_window_open", False))
+    except Exception:
+        global_open = False
+
+    raw_status = str((window or {}).get("status") or "").upper()
+    status = raw_status if raw_status else ("OPEN" if global_open else "CLOSED")
+    is_open = status in OPEN_REPORTING_STATUSES or (status == "CLOSED" and global_open)
+
+    requested_at = (window or {}).get("opened_at") or (window or {}).get("updated_at")
+    message = "Reporting window is open." if is_open else "Reporting window is currently closed."
+
+    return {
+        "enterprise_id": enterprise_id,
+        "period": target_month,
+        "status": status,
+        "hasLguRequestedReports": is_open,
+        "has_lgu_requested_reports": is_open,
+        "requestedAt": requested_at,
+        "requested_at": requested_at,
+        "message": message,
+    }
 
 
 @router.get("/enterprises")
@@ -67,6 +140,30 @@ def get_reporting_window_status(
     enterprise_id: str = "ent_archies_001",
 ):
     return get_reporting_window_status_service(enterprise_id)
+
+
+@router.get("/enterprise/reports/lgu-notification-status")
+def get_enterprise_lgu_notification_status(
+    enterprise_id: str = "ent_archies_001",
+    month: str | None = None,
+):
+    return _build_reporting_status_compat_payload(enterprise_id, month)
+
+
+@router.get("/enterprise/lgu/notification-status")
+def get_enterprise_lgu_notification_status_alias(
+    enterprise_id: str = "ent_archies_001",
+    month: str | None = None,
+):
+    return _build_reporting_status_compat_payload(enterprise_id, month)
+
+
+@router.get("/enterprise/reports/request-status")
+def get_enterprise_report_request_status(
+    enterprise_id: str = "ent_archies_001",
+    month: str | None = None,
+):
+    return _build_reporting_status_compat_payload(enterprise_id, month)
 
 
 @router.post("/enterprise/export/csv")
@@ -121,7 +218,32 @@ def get_enterprise_settings(enterprise_id: str = "ent_archies_001"):
     _require_supabase()
 
     client = get_supabase_client()
-    result = client.table("enterprises").select("*").eq("id", enterprise_id).execute()
+    try:
+        result = client.table("enterprises").select("*").eq("id", enterprise_id).execute()
+    except Exception as exc:
+        if not _is_supabase_access_error(exc):
+            raise
+
+        fallback_account = enterprise_repository.get_enterprise_account(enterprise_id)
+        fallback_profile = enterprise_repository.get_enterprise_profile(enterprise_id) or {}
+        company_name = ""
+        if fallback_account and isinstance(fallback_account.get("company_name"), str):
+            company_name = str(fallback_account.get("company_name"))
+        elif isinstance(fallback_profile.get("company_name"), str):
+            company_name = str(fallback_profile.get("company_name"))
+
+        logger.warning("Supabase access denied for enterprises table; returning account settings fallback")
+        return {
+            "enterprise_id": enterprise_id,
+            "settings": {
+                "company_name": company_name,
+                "business_type": "",
+                "address": "",
+                "contact_email": "",
+                "contact_phone": "",
+                "barangay": "",
+            },
+        }
 
     if not result.data or len(result.data) == 0:
         raise DomainNotFoundError("Enterprise not found")
@@ -166,7 +288,12 @@ def update_enterprise_settings(
     if not update_data:
         return {"message": "No changes provided"}
 
-    result = client.table("enterprises").update(update_data).eq("id", enterprise_id).execute()
+    try:
+        result = client.table("enterprises").update(update_data).eq("id", enterprise_id).execute()
+    except Exception as exc:
+        if _is_supabase_access_error(exc):
+            raise DomainServiceUnavailableError("Database access denied for enterprise settings.")
+        raise
 
     if result.data and len(result.data) > 0:
         return {"message": "Settings updated", "settings": result.data[0]}
@@ -180,7 +307,13 @@ def get_enterprise_profile_extended(enterprise_id: str = "ent_archies_001"):
     _require_supabase()
 
     client = get_supabase_client()
-    result = client.table("enterprise_profiles").select("*").eq("id", enterprise_id).execute()
+    try:
+        result = client.table("enterprise_profiles").select("*").eq("id", enterprise_id).execute()
+    except Exception as exc:
+        if not _is_supabase_access_error(exc):
+            raise
+        logger.warning("Supabase access denied for enterprise_profiles; returning empty extended profile")
+        return {"enterprise_id": enterprise_id, "profile": {}}
 
     if not result.data or len(result.data) == 0:
         return {"enterprise_id": enterprise_id, "profile": {}}
@@ -215,10 +348,15 @@ def update_enterprise_profile_extended(
     if not update_data:
         return {"message": "No changes provided"}
 
-    result = client.table("enterprise_profiles").upsert({
-        "id": enterprise_id,
-        **update_data
-    }).execute()
+    try:
+        result = client.table("enterprise_profiles").upsert({
+            "id": enterprise_id,
+            **update_data
+        }).execute()
+    except Exception as exc:
+        if _is_supabase_access_error(exc):
+            raise DomainServiceUnavailableError("Database access denied for enterprise profile.")
+        raise
 
     if result.data and len(result.data) > 0:
         return {"message": "Profile updated", "profile": result.data[0]}
@@ -248,7 +386,13 @@ def get_enterprise_preferences(enterprise_id: str = "ent_archies_001"):
     _require_supabase()
 
     client = get_supabase_client()
-    result = client.table("enterprise_profiles").select("settings").eq("id", enterprise_id).execute()
+    try:
+        result = client.table("enterprise_profiles").select("settings").eq("id", enterprise_id).execute()
+    except Exception as exc:
+        if not _is_supabase_access_error(exc):
+            raise
+        logger.warning("Supabase access denied for enterprise preferences; returning empty preferences")
+        return {"enterprise_id": enterprise_id, "preferences": {}}
 
     if not result.data or len(result.data) == 0:
         return {"enterprise_id": enterprise_id, "preferences": {}}
@@ -269,10 +413,15 @@ def update_enterprise_preferences(
 
     client = get_supabase_client()
 
-    result = client.table("enterprise_profiles").upsert({
-        "id": enterprise_id,
-        "settings": body.preferences
-    }).execute()
+    try:
+        result = client.table("enterprise_profiles").upsert({
+            "id": enterprise_id,
+            "settings": body.preferences
+        }).execute()
+    except Exception as exc:
+        if _is_supabase_access_error(exc):
+            raise DomainServiceUnavailableError("Database access denied for enterprise preferences.")
+        raise
 
     if result.data and len(result.data) > 0:
         return {"message": "Preferences updated", "preferences": body.preferences}

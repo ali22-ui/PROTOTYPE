@@ -77,6 +77,7 @@ class DetectionBatchResponse(BaseModel):
     inserted_count: int
     failed_count: int = 0
     message: str = "Success"
+    error_summary: Optional[str] = None
 
 
 # === Unified Deduplication Schemas (PRD-006) ===
@@ -126,6 +127,7 @@ class UnifiedDetectionBatchResponse(BaseModel):
     updated_count: int = 0
     failed_count: int = 0
     message: str = "Success"
+    error_summary: Optional[str] = None
 
 
 class DeduplicationStats(BaseModel):
@@ -137,6 +139,7 @@ class DeduplicationStats(BaseModel):
     reid_by_appearance: int = Field(0, description="Re-IDs via appearance matching")
     reid_by_face: int = Field(0, description="Re-IDs via face embedding")
     dedup_ratio: float = Field(0, ge=0, description="Deduplication ratio (1 - unique/total)")
+    warning: Optional[str] = None
 
 
 class VisitorStatistics(BaseModel):

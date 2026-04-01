@@ -14,7 +14,7 @@ def _require_supabase() -> None:
         raise DomainServiceUnavailableError("Supabase is required for enterprise reporting workflows")
 
 
-def _get_reporting_window_safe(enterprise_id: str):
+def _get_reporting_window_safe(enterprise_id: str, *, fail_on_service_error: bool = False):
     """
     Get reporting window with graceful fallback.
     Returns None if window not found or if there's a permission error.
@@ -26,15 +26,17 @@ def _get_reporting_window_safe(enterprise_id: str):
         return window
     except DomainServiceUnavailableError as e:
         logger.warning(f"Could not fetch reporting window for {enterprise_id}: {e}")
-        raise
+        if fail_on_service_error:
+            raise
+        return enterprise_repository.get_reporting_window(enterprise_id)
     except Exception as e:
         logger.exception(f"Unexpected error fetching reporting window for {enterprise_id}")
-        raise DomainServiceUnavailableError("Failed to fetch reporting window") from e
+        if fail_on_service_error:
+            raise DomainServiceUnavailableError("Failed to fetch reporting window") from e
+        return enterprise_repository.get_reporting_window(enterprise_id)
 
 
 def get_enterprise_profile(enterprise_id: str):
-    _require_supabase()
-
     profile = enterprise_repository.get_enterprise_profile(enterprise_id)
     if not profile:
         raise DomainNotFoundError("Enterprise profile not found")
@@ -85,7 +87,7 @@ def get_enterprise_dashboard(date: str | None = None, enterprise_id: str = "ent_
 def get_reporting_window_status(enterprise_id: str = "ent_archies_001"):
     _require_supabase()
 
-    window = _get_reporting_window_safe(enterprise_id)
+    window = _get_reporting_window_safe(enterprise_id, fail_on_service_error=True)
 
     if not window:
         raise DomainNotFoundError("Reporting window not found")

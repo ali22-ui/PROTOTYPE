@@ -1,12 +1,13 @@
 import asyncio
 import unittest
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from starlette.requests import Request
 
 from app.main import app
 from app.state.runtime_store import reset_runtime_state
-from domain_exceptions import DomainConflictError, DomainForbiddenError, DomainNotFoundError
+from domain_exceptions import DomainConflictError, DomainForbiddenError, DomainNotFoundError, DomainServiceUnavailableError
 
 
 class ErrorMappingTests(unittest.TestCase):
@@ -39,6 +40,20 @@ class ErrorMappingTests(unittest.TestCase):
         self.assertEqual(nf_code, 404)
         self.assertEqual(fb_code, 403)
         self.assertEqual(cf_code, 409)
+
+    def test_enterprise_profile_falls_back_when_reporting_window_is_denied(self) -> None:
+        with patch(
+            "app.services.enterprise_service.reporting_window_repo.get_by_enterprise_current",
+            side_effect=DomainServiceUnavailableError("db unavailable"),
+        ), patch(
+            "app.services.enterprise_service.system_settings_repo.get_reporting_window_state",
+            return_value={"is_reporting_window_open": True, "updated_at": None, "updated_by": "system"},
+        ):
+            response = self.client.get("/api/enterprise/profile", params={"enterprise_id": "ent_archies_001"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["reporting_window_status"], "OPEN")
 
 
 if __name__ == "__main__":

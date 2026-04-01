@@ -7,8 +7,8 @@ router = APIRouter(tags=["Reports"])
 
 
 @router.get("/reports")
-def get_reports():
-    return get_reports_service()
+def get_reports(month: str | None = None):
+    return get_reports_service(month)
 
 
 @router.get("/logs")

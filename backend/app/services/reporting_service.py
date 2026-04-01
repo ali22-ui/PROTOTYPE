@@ -1,4 +1,5 @@
 from datetime import datetime
+import logging
 
 from domain_exceptions import (
     DomainConflictError,
@@ -19,6 +20,9 @@ from app.repositories.supabase_repositories import (
 )
 from app.schemas.enterprise import EnterpriseActionRequest, EnterpriseReportSubmission
 from app.schemas.lgu import ReportingWindowAction, ReportingWindowBulkAction
+
+
+logger = logging.getLogger(__name__)
 
 
 def _require_supabase() -> None:
@@ -113,7 +117,10 @@ def get_enterprise_report_history(enterprise_id: str):
         raise DomainNotFoundError("Enterprise account not found")
 
     target_id = enterprise_repository.resolve_enterprise_id(enterprise_id)
-    reports = report_submission_repo.list_by_enterprise(target_id)
+    try:
+        reports = report_submission_repo.list_by_enterprise(target_id)
+    except DomainServiceUnavailableError:
+        reports = []
     
     return {
         "enterprise_id": target_id,
@@ -165,17 +172,28 @@ def get_lgu_overview():
     _require_supabase()
 
     total_enterprises = len(enterprise_repository.list_enterprise_accounts())
+    warnings: list[str] = []
 
     current_period = datetime.now().strftime("%Y-%m")
-    windows = reporting_window_repo.list_by_period(current_period)
+    try:
+        windows = reporting_window_repo.list_by_period(current_period)
+    except Exception as exc:
+        logger.warning("Failed to load reporting windows for overview: %s", exc, exc_info=True)
+        windows = []
+        warnings.append("Reporting window data is currently degraded; showing partial overview metrics.")
+
     submitted = sum(1 for w in windows if w.get("status") == "SUBMITTED")
-    active = reporting_window_repo.get_by_enterprise_current(
-        enterprise_repository.get_archies_profile()["enterprise_id"]
-    )
+    target_enterprise_id = enterprise_repository.get_archies_profile()["enterprise_id"]
+
+    try:
+        active = reporting_window_repo.get_by_enterprise_current(target_enterprise_id)
+    except Exception as exc:
+        logger.warning("Failed to load active reporting window for overview: %s", exc, exc_info=True)
+        active = enterprise_repository.get_reporting_window(target_enterprise_id)
 
     if not active:
         active = {
-            "enterprise_id": enterprise_repository.get_archies_profile()["enterprise_id"],
+            "enterprise_id": target_enterprise_id,
             "period": current_period,
             "status": "CLOSED",
             "opened_at": None,
@@ -189,29 +207,84 @@ def get_lgu_overview():
         "submitted_reports_current_period": submitted,
         "submission_completion_rate_pct": round((submitted / total_enterprises) * 100, 2),
         "active_reporting_window": active,
+        "warning": " ".join(dict.fromkeys(warnings)) if warnings else None,
     }
 
 
 def get_lgu_reports(period: str | None = None, enterprise_id: str | None = None):
     _require_supabase()
 
-    if enterprise_id:
-        target_id = enterprise_repository.resolve_enterprise_id(enterprise_id)
-        reports = report_submission_repo.list_by_period(period, target_id) if period else report_submission_repo.list_by_enterprise(target_id)
-    elif period:
-        reports = report_submission_repo.list_by_period(period)
-    else:
-        reports = report_submission_repo.list_all()
+    warnings: list[str] = []
 
-    return {"reports": reports}
+    def _normalize_runtime_reports(raw_reports: list[dict], selected_period: str | None, selected_enterprise: str | None) -> list[dict]:
+        normalized: list[dict] = []
+        target_enterprise = enterprise_repository.resolve_enterprise_id(selected_enterprise) if selected_enterprise else None
+
+        for report in raw_reports:
+            report_period = None
+            period_payload = report.get("period")
+            if isinstance(period_payload, dict):
+                report_period = period_payload.get("month")
+            elif isinstance(period_payload, str):
+                report_period = period_payload
+
+            report_enterprise_id = str(report.get("enterprise_id") or "")
+
+            if selected_period and report_period != selected_period:
+                continue
+            if target_enterprise and report_enterprise_id != target_enterprise:
+                continue
+
+            normalized.append(report)
+
+        return normalized
+
+    try:
+        if enterprise_id:
+            target_id = enterprise_repository.resolve_enterprise_id(enterprise_id)
+            reports = report_submission_repo.list_by_period(period, target_id) if period else report_submission_repo.list_by_enterprise(target_id)
+        elif period:
+            reports = report_submission_repo.list_by_period(period)
+        else:
+            reports = report_submission_repo.list_all()
+    except Exception as exc:
+        logger.warning("Falling back to runtime report packs due to Supabase report read failure: %s", exc, exc_info=True)
+        reports = _normalize_runtime_reports(reporting_repository.list_report_packs(), period, enterprise_id)
+        warnings.append(
+            "Report submissions are temporarily unavailable from Supabase; showing runtime report fallback data."
+        )
+
+    return {
+        "reports": reports,
+        "warning": " ".join(dict.fromkeys(warnings)) if warnings else None,
+    }
 
 
 def get_lgu_report_detail(report_id: str):
     _require_supabase()
 
-    report = report_submission_repo.get_by_id(report_id)
+    report = None
+    warning = None
+
+    try:
+        report = report_submission_repo.get_by_id(report_id)
+    except Exception as exc:
+        logger.warning("Failed to load report detail from Supabase for %s: %s", report_id, exc, exc_info=True)
+        warning = "Supabase report detail is unavailable; returning runtime fallback data."
+        report = reporting_repository.get_report_by_id(report_id)
+
+    if not report:
+        fallback_report = reporting_repository.get_report_by_id(report_id)
+        if fallback_report:
+            report = fallback_report
+            warning = warning or "Supabase report detail is unavailable; returning runtime fallback data."
+
     if not report:
         raise DomainNotFoundError("Report not found")
+
+    if warning and isinstance(report, dict):
+        report = {**report, "warning": warning}
+
     return report
 
 
@@ -388,13 +461,66 @@ def get_lgu_enterprise_accounts(period: str | None = None):
     _require_supabase()
 
     target_period = period or datetime.now().strftime("%Y-%m")
+    current_period = datetime.now().strftime("%Y-%m")
     accounts = []
+    warnings: list[str] = []
 
-    for item in enterprise_repository.list_enterprise_accounts():
-        window = reporting_window_repo.get_by_enterprise(item["enterprise_id"], target_period)
+    enterprise_accounts = enterprise_repository.list_enterprise_accounts()
+    enterprise_ids = [item["enterprise_id"] for item in enterprise_accounts]
+
+    windows_by_enterprise: dict[str, dict] = {}
+    current_windows_by_enterprise: dict[str, dict] = {}
+    submitted_enterprises: set[str] = set()
+
+    try:
+        period_windows = reporting_window_repo.list_by_period_for_enterprises(target_period, enterprise_ids)
+        windows_by_enterprise = {
+            str(row.get("enterprise_id")): row
+            for row in period_windows
+            if isinstance(row.get("enterprise_id"), str)
+        }
+    except Exception as exc:
+        logger.warning("Failed to batch-load reporting windows for period %s: %s", target_period, exc, exc_info=True)
+        warnings.append(
+            "Reporting window status is partially unavailable due to a temporary upstream database error."
+        )
+
+    missing_period_ids = [enterprise_id for enterprise_id in enterprise_ids if enterprise_id not in windows_by_enterprise]
+    if missing_period_ids and target_period != current_period:
+        try:
+            current_windows = reporting_window_repo.list_current_by_enterprises(missing_period_ids)
+            current_windows_by_enterprise = {
+                str(row.get("enterprise_id")): row
+                for row in current_windows
+                if isinstance(row.get("enterprise_id"), str)
+            }
+        except Exception as exc:
+            logger.warning(
+                "Failed to batch-load fallback current-period reporting windows: %s",
+                exc,
+                exc_info=True,
+            )
+            warnings.append(
+                "Fallback reporting window status is unavailable for some enterprises due to a temporary upstream database error."
+            )
+
+    try:
+        submitted_enterprises = report_submission_repo.list_submitted_enterprise_ids_for_period(
+            target_period,
+            enterprise_ids,
+        )
+    except Exception as exc:
+        logger.warning("Failed to batch-load report submission flags for period %s: %s", target_period, exc, exc_info=True)
+        warnings.append(
+            "Submission status is partially unavailable due to a temporary upstream database error."
+        )
+
+    for item in enterprise_accounts:
+        enterprise_id = item["enterprise_id"]
+        window = windows_by_enterprise.get(enterprise_id)
         if not window:
-            window = reporting_window_repo.get_by_enterprise_current(item["enterprise_id"])
-        has_report = report_submission_repo.exists(item["enterprise_id"], target_period)
+            window = current_windows_by_enterprise.get(enterprise_id)
+        has_report = enterprise_id in submitted_enterprises
 
         if not window:
             window = {"period": target_period, "status": "CLOSED"}
@@ -411,4 +537,5 @@ def get_lgu_enterprise_accounts(period: str | None = None):
     return {
         "accounts": accounts,
         "period": target_period,
+        "warning": " ".join(dict.fromkeys(warnings)) if warnings else None,
     }

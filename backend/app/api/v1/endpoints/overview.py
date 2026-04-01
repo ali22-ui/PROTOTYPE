@@ -6,5 +6,5 @@ router = APIRouter(tags=["Overview"])
 
 
 @router.get("/overview")
-def get_overview():
-    return get_overview_service()
+def get_overview(month: str | None = None):
+    return get_overview_service(month)
