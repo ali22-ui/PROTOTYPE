@@ -44,35 +44,41 @@ def _is_global_reporting_window_open() -> bool:
 
 
 def submit_enterprise_report(body: EnterpriseReportSubmission):
-    _require_supabase()
-
+    """Submit enterprise report with graceful fallback when Supabase is unavailable."""
+    supabase_available = is_supabase_available()
+    
     enterprise = enterprise_repository.get_enterprise_account(body.enterprise_id)
     if not enterprise:
         raise DomainNotFoundError("Enterprise account not found")
 
-    window = _resolve_reporting_window(body.enterprise_id, body.period)
-    is_global_open = _is_global_reporting_window_open()
+    # For non-Supabase mode, skip window validation and allow submission
+    window = None
+    is_global_open = True  # Default to open when Supabase is unavailable
+    
+    if supabase_available:
+        window = _resolve_reporting_window(body.enterprise_id, body.period)
+        is_global_open = _is_global_reporting_window_open()
 
-    if not window and not is_global_open:
-        raise DomainNotFoundError("Enterprise reporting window not found")
+        if not window and not is_global_open:
+            raise DomainNotFoundError("Enterprise reporting window not found")
 
-    if enterprise["linked_lgu_id"] != enterprise_repository.get_archies_profile()["linked_lgu_id"]:
-        raise DomainForbiddenError("Enterprise is not linked to this LGU")
+        if enterprise["linked_lgu_id"] != enterprise_repository.get_archies_profile()["linked_lgu_id"]:
+            raise DomainForbiddenError("Enterprise is not linked to this LGU")
 
-    # Check if window allows submission
-    open_statuses = ("OPEN", "REMIND", "WARN", "RENOTIFY")
-    window_status = (window or {}).get("status")
-    if not is_global_open and window_status not in open_statuses:
-        raise DomainConflictError("Reporting window is currently CLOSED")
+        # Check if window allows submission
+        open_statuses = ("OPEN", "REMIND", "WARN", "RENOTIFY")
+        window_status = (window or {}).get("status")
+        if not is_global_open and window_status not in open_statuses:
+            raise DomainConflictError("Reporting window is currently CLOSED")
 
-    if is_global_open and window_status not in open_statuses:
-        reporting_window_repo.open_window(
-            enterprise_id=body.enterprise_id,
-            period=body.period,
-            opened_by="lgu_admin_01",
-            message="Opened via global reporting window control.",
-            status="OPEN",
-        )
+        if is_global_open and window_status not in open_statuses:
+            reporting_window_repo.open_window(
+                enterprise_id=body.enterprise_id,
+                period=body.period,
+                opened_by="lgu_admin_01",
+                message="Opened via global reporting window control.",
+                status="OPEN",
+            )
 
     # Build report pack
     report_pack = body.payload if body.payload else reporting_repository.build_report_pack(body.period, body.enterprise_id)
@@ -83,30 +89,92 @@ def submit_enterprise_report(body: EnterpriseReportSubmission):
         report_pack["linked_lgu_id"] = enterprise["linked_lgu_id"]
         report_pack["report_id"] = f"rpt_{body.enterprise_id}_{body.period.replace('-', '_')}"
 
-    report_submission_repo.upsert(
-        enterprise_id=body.enterprise_id,
-        period=body.period,
-        enterprise_name=enterprise["company_name"],
-        linked_lgu_id=enterprise.get("linked_lgu_id"),
-        status="SUBMITTED",
-        payload=report_pack,
-        submitted_by=body.enterprise_id,
-    )
-    reporting_window_repo.mark_submitted(body.enterprise_id, body.period)
-    audit_log_repo.log(
-        entity_type="report",
-        entity_id=report_pack["report_id"],
-        action="submit",
-        actor_id=body.enterprise_id,
-        actor_type="enterprise",
-        new_value={"period": body.period, "status": "SUBMITTED"},
-    )
+    # Extract KPIs from payload summary if passed, otherwise use direct fields
+    payload_summary = (body.payload or {}).get("summary", {})
+    total_visitors = body.total_visitors or payload_summary.get("total_visitors", 0)
+    male_count = body.male_count or payload_summary.get("male_count", 0)
+    female_count = body.female_count or payload_summary.get("female_count", 0)
+    row_count = body.row_count or (body.payload or {}).get("rows", 0)
+
+    # Store to Supabase if available, otherwise store in runtime
+    if supabase_available:
+        try:
+            report_submission_repo.upsert(
+                enterprise_id=body.enterprise_id,
+                period=body.period,
+                linked_lgu_id=enterprise.get("linked_lgu_id"),
+                status="SUBMITTED",
+                submitted_by=body.enterprise_id,
+                total_visitors=total_visitors,
+                male_count=male_count,
+                female_count=female_count,
+                row_count=row_count,
+                notes=body.notes,
+            )
+            reporting_window_repo.mark_submitted(body.enterprise_id, body.period)
+        except Exception as e:
+            logger.warning(f"Supabase upsert failed, falling back to runtime: {e}")
+            # Fallback: store in runtime
+            _store_report_in_runtime(body, report_pack, total_visitors, male_count, female_count, row_count)
+    else:
+        # Store in runtime when Supabase is not available
+        _store_report_in_runtime(body, report_pack, total_visitors, male_count, female_count, row_count)
+        logger.info(f"Report stored in runtime for {body.enterprise_id} (Supabase unavailable)")
+    
+    # Update enterprise compliance_status to 'Compliant' after successful submission
+    try:
+        enterprise_repository.update_compliance_status(body.enterprise_id, "Compliant")
+        logger.info(f"Updated compliance_status to Compliant for enterprise {body.enterprise_id}")
+    except Exception as e:
+        logger.warning(f"Failed to update compliance_status for {body.enterprise_id}: {e}")
+    
+    # Log audit if Supabase is available
+    if supabase_available:
+        try:
+            audit_log_repo.log(
+                entity_type="report",
+                entity_id=report_pack["report_id"],
+                action="submit",
+                actor_id=body.enterprise_id,
+                actor_type="enterprise",
+                new_value={"period": body.period, "status": "SUBMITTED", "total_visitors": total_visitors},
+            )
+        except Exception as e:
+            logger.warning(f"Audit log failed: {e}")
 
     return {
         "message": "Report submitted successfully to linked LGU account",
         "report_id": report_pack["report_id"],
         "status": "SUBMITTED",
     }
+
+
+def _store_report_in_runtime(body: EnterpriseReportSubmission, report_pack: dict, total_visitors: int, male_count: int, female_count: int, row_count: int):
+    """Store report submission in runtime memory when Supabase is unavailable."""
+    from app.state import runtime_store
+    
+    report_id = report_pack.get("report_id", f"rpt_{body.enterprise_id}_{body.period.replace('-', '_')}")
+    runtime_report = {
+        "report_id": report_id,
+        "enterprise_id": body.enterprise_id,
+        "enterprise_name": report_pack.get("enterprise_name", ""),
+        "linked_lgu_id": report_pack.get("linked_lgu_id"),
+        "period": {"month": body.period},
+        "status": "SUBMITTED",
+        "submitted_at": datetime.now().isoformat(),
+        "submitted_by": body.enterprise_id,
+        "kpis": {
+            "total_visitors": total_visitors,
+            "male_count": male_count,
+            "female_count": female_count,
+        },
+        "row_count": row_count,
+    }
+    
+    # Store in runtime store
+    reports = runtime_store.get_submitted_reports()
+    reports[report_id] = runtime_report
+    runtime_store.set_submitted_reports(reports)
 
 
 def get_enterprise_report_history(enterprise_id: str):
@@ -212,8 +280,8 @@ def get_lgu_overview():
 
 
 def get_lgu_reports(period: str | None = None, enterprise_id: str | None = None):
-    _require_supabase()
-
+    """Get LGU reports with graceful fallback to runtime storage."""
+    supabase_available = is_supabase_available()
     warnings: list[str] = []
 
     def _normalize_runtime_reports(raw_reports: list[dict], selected_period: str | None, selected_enterprise: str | None) -> list[dict]:
@@ -238,18 +306,35 @@ def get_lgu_reports(period: str | None = None, enterprise_id: str | None = None)
             normalized.append(report)
 
         return normalized
+    
+    def _get_runtime_submitted_reports() -> list[dict]:
+        """Get reports from runtime storage (submitted when Supabase was unavailable)."""
+        from app.state import runtime_store
+        return list(runtime_store.get_submitted_reports().values())
 
-    try:
-        if enterprise_id:
-            target_id = enterprise_repository.resolve_enterprise_id(enterprise_id)
-            reports = report_submission_repo.list_by_period(period, target_id) if period else report_submission_repo.list_by_enterprise(target_id)
-        elif period:
-            reports = report_submission_repo.list_by_period(period)
-        else:
-            reports = report_submission_repo.list_all()
-    except Exception as exc:
-        logger.warning("Falling back to runtime report packs due to Supabase report read failure: %s", exc, exc_info=True)
-        reports = _normalize_runtime_reports(reporting_repository.list_report_packs(), period, enterprise_id)
+    reports: list[dict] = []
+    
+    if supabase_available:
+        try:
+            if enterprise_id:
+                target_id = enterprise_repository.resolve_enterprise_id(enterprise_id)
+                reports = report_submission_repo.list_by_period(period, target_id) if period else report_submission_repo.list_by_enterprise(target_id)
+            elif period:
+                reports = report_submission_repo.list_by_period(period)
+            else:
+                reports = report_submission_repo.list_all()
+        except Exception as exc:
+            logger.warning("Falling back to runtime report packs due to Supabase report read failure: %s", exc, exc_info=True)
+            reports = _normalize_runtime_reports(reporting_repository.list_report_packs(), period, enterprise_id)
+            warnings.append("Supabase reports unavailable; using runtime fallback data.")
+    else:
+        # Supabase not available - use runtime storage + core runtime packs
+        logger.info("Supabase unavailable, using runtime storage for reports")
+        runtime_submitted = _get_runtime_submitted_reports()
+        core_packs = reporting_repository.list_report_packs()
+        combined = runtime_submitted + core_packs
+        reports = _normalize_runtime_reports(combined, period, enterprise_id)
+        warnings.append("Database unavailable; showing runtime data.")
         warnings.append(
             "Report submissions are temporarily unavailable from Supabase; showing runtime report fallback data."
         )

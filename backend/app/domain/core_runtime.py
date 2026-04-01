@@ -730,6 +730,7 @@ def build_enterprise_catalog():
             "company_name": "Archies",
             "linked_lgu_id": "lgu_san_pedro_001",
             "business_type": "Tourism",
+            "barangay": "Poblacion",
         }
     ]
 
@@ -743,6 +744,7 @@ def build_enterprise_catalog():
                 "company_name": item["name"],
                 "linked_lgu_id": "lgu_san_pedro_001",
                 "business_type": item.get("type", "General"),
+                "barangay": item.get("barangay", "Unassigned"),
             }
         )
 
@@ -773,6 +775,7 @@ def build_enterprise_profiles(accounts):
             "dashboard_title": f"{item['company_name']} Enterprise Dashboard - Tourism Analytics Portal",
             "logo_url": f"https://placehold.co/96x96/{theme['accent'].replace('#', '')}/FFFFFF?text={item['company_name'][:2].upper()}",
             "linked_lgu_id": item["linked_lgu_id"],
+            "barangay": item.get("barangay", "Unassigned"),
             "timezone": "PST",
             "theme": theme,
             "cameras": [

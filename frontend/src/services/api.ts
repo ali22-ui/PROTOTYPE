@@ -625,34 +625,114 @@ export const fetchCameraMonitoringEvents = async (
   }
 };
 
+export interface ReportSummaryStats {
+  totalVisitors: number;
+  touristCount: number;
+  residentCount: number;
+  maleCount: number;
+  femaleCount: number;
+}
+
 export const submitMonthlyReport = async (
   enterpriseId: string,
   month: string,
   logs: CameraLog[],
+  summaryStats?: ReportSummaryStats,
 ): Promise<{ reportId: string; status: string; message: string }> => {
+  // Calculate summary from logs if not provided
+  const stats = summaryStats ?? {
+    totalVisitors: logs.reduce((sum, row) => sum + row.totalCount, 0),
+    touristCount: logs.filter((row) => row.classification === 'Tourist').length,
+    residentCount: logs.filter((row) => row.classification !== 'Tourist').length,
+    maleCount: logs.reduce((sum, row) => sum + row.maleCount, 0),
+    femaleCount: logs.reduce((sum, row) => sum + row.femaleCount, 0),
+  };
+
   const payload = {
     source: 'frontend-report-center',
     generated_at: new Date().toISOString(),
     rows: logs.length,
     logs: logs.slice(0, 100),
+    summary: {
+      total_visitors: stats.totalVisitors,
+      tourist_count: stats.touristCount,
+      resident_count: stats.residentCount,
+      male_count: stats.maleCount,
+      female_count: stats.femaleCount,
+    },
+  };
+
+  const requestBody = {
+    enterprise_id: enterpriseId,
+    period: month,
+    payload,
+    total_visitors: stats.totalVisitors,
+    male_count: stats.maleCount,
+    female_count: stats.femaleCount,
+    row_count: logs.length,
   };
 
   try {
-    const response = await http.post<{ report_id: string; status: string; message: string }>('/enterprise/reports/submit', {
-      enterprise_id: enterpriseId,
-      period: month,
-      payload,
+    console.log('[submitMonthlyReport] Sending request to /enterprise/reports/submit', {
+      enterpriseId,
+      month,
+      totalVisitors: stats.totalVisitors,
+      rowCount: logs.length,
     });
 
-    const result = {
+    const response = await http.post<{ report_id: string; status: string; message: string }>(
+      '/enterprise/reports/submit',
+      requestBody,
+    );
+
+    console.log('[submitMonthlyReport] Success response:', response.data);
+
+    return {
       reportId: response.data.report_id,
       status: response.data.status,
       message: response.data.message,
     };
-
-    return result;
   } catch (error) {
-    throw toAppError(error, 'Unable to submit report. Please retry.');
+    // Enhanced error logging for debugging
+    const axiosError = error as AxiosError<{ detail?: string; message?: string; error?: string }>;
+    
+    console.error('[submitMonthlyReport] SUBMISSION ERROR:', {
+      errorCode: axiosError.code,
+      errorMessage: axiosError.message,
+      responseStatus: axiosError.response?.status,
+      responseData: axiosError.response?.data,
+      requestUrl: axiosError.config?.url,
+      requestBaseUrl: axiosError.config?.baseURL,
+    });
+
+    // Check for specific error types
+    if (axiosError.code === 'ERR_NETWORK') {
+      console.error('[submitMonthlyReport] Network Error - Backend server may be offline or unreachable.');
+      console.error('[submitMonthlyReport] Target URL:', `${axiosError.config?.baseURL}${axiosError.config?.url}`);
+      throw new Error('Network Error: Unable to reach the server. Please ensure the backend is running on http://127.0.0.1:8000');
+    }
+
+    if (axiosError.response?.status === 503) {
+      console.error('[submitMonthlyReport] Service Unavailable - Supabase may not be configured.');
+      throw new Error('Database service unavailable. Please check Supabase configuration.');
+    }
+
+    if (axiosError.response?.status === 404) {
+      console.error('[submitMonthlyReport] Endpoint not found - API route may be missing.');
+      throw new Error('API endpoint not found. Please verify backend routes.');
+    }
+
+    if (axiosError.response?.status === 409) {
+      console.error('[submitMonthlyReport] Conflict - Reporting window may be closed.');
+      throw new Error(axiosError.response.data?.detail || 'Reporting window is currently closed.');
+    }
+
+    // Extract detailed error message
+    const detail = axiosError.response?.data?.detail;
+    const message = axiosError.response?.data?.message;
+    const errorText = axiosError.response?.data?.error;
+    
+    throw new Error(detail || message || errorText || 'Unable to submit report. Please check console for details.');
   }
 };
 

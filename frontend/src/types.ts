@@ -850,10 +850,14 @@ export interface LguReportPack {
   isPrinted?: boolean;
   kpis?: {
     total_visitors_mtd?: number;
+    total_visitors?: number;
+    male_count?: number;
+    female_count?: number;
     trend_pct?: number;
     avg_dwell?: string;
     peak_visitor_hours?: string[];
   };
+  row_count?: number;
   charts?: {
     visitor_residence_breakdown?: Record<string, number>;
     daily_summary?: Array<{

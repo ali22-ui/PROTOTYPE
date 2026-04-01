@@ -137,10 +137,14 @@ export default function ReportCenterView(): JSX.Element {
   const summary = useMemo(() => {
     const total = logs.reduce((sum, row) => sum + row.totalCount, 0);
     const tourists = logs.filter((row) => row.classification === 'Tourist').length;
+    const maleCount = logs.reduce((sum, row) => sum + row.maleCount, 0);
+    const femaleCount = logs.reduce((sum, row) => sum + row.femaleCount, 0);
     return {
       total,
       tourists,
       visitors: logs.length - tourists,
+      maleCount,
+      femaleCount,
     };
   }, [logs]);
 
@@ -174,13 +178,30 @@ export default function ReportCenterView(): JSX.Element {
     setSubmissionMessage(null);
 
     try {
-      const result = await submitMonthlyReport(user.enterpriseId, month, logs);
-      setSubmissionMessage(`${result.message} (${result.reportId})`);
+      // Include computed statistics in the submission payload
+      const summaryStats = {
+        totalVisitors: summary.total,
+        touristCount: summary.tourists,
+        residentCount: summary.visitors,
+        maleCount: summary.maleCount,
+        femaleCount: summary.femaleCount,
+      };
+      
+      console.log('[ReportCenterView] Submitting monthly report:', {
+        enterpriseId: user.enterpriseId,
+        month,
+        logCount: logs.length,
+        summaryStats,
+      });
+      
+      const result = await submitMonthlyReport(user.enterpriseId, month, logs, summaryStats);
+      setSubmissionMessage(`✓ ${result.message} (${result.reportId})`);
       setHasSubmittedForMonth(true);
       void refreshReportingWindowState();
     } catch (err) {
+      console.error('[ReportCenterView] Submission failed:', err);
       const message = err instanceof Error ? err.message : 'Failed to submit report.';
-      setSubmissionMessage(message);
+      setSubmissionMessage(`✗ Error: ${message}`);
     } finally {
       setSubmitting(false);
     }

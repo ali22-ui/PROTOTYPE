@@ -30,9 +30,9 @@ interface ActivityLogRow {
 }
 
 const complianceBadgeClass: Record<ComplianceStatus, string> = {
-  Compliant: 'bg-brand-mid/20 text-brand-dark',
-  Pending: 'bg-brand-accent/20 text-brand-accent',
-  Overdue: 'bg-brand-accent/20 text-brand-accent',
+  Compliant: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+  Pending: 'bg-amber-50 text-amber-700 border border-amber-200',
+  Overdue: 'bg-red-50 text-red-700 border border-red-200',
 };
 
 const actionFeedbackLabel: Record<ComplianceAction, string> = {
@@ -371,42 +371,44 @@ export default function EnterpriseLogsView(): JSX.Element {
 
   return (
     <div className="grid min-h-full gap-4">
-      <section className="rounded-2xl bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h3 className="text-lg font-bold text-brand-dark">Enterprise Logs</h3>
-            <p className="text-sm text-slate-600">
-              Timeline feed sourced from backend logs, with enterprise-status fallback generation.
-            </p>
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-8">
+        <div className="p-6 border-b border-gray-100">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold text-brand-dark">Enterprise Logs</h3>
+              <p className="text-sm text-gray-500 mt-1">
+                Recent activity feed — showing latest 10 entries
+              </p>
+            </div>
+            <span className="rounded-full bg-gray-50 border border-gray-200 px-3 py-1 text-xs font-medium text-gray-600">
+              {Math.min(activityRows.length, 10)} of {activityRows.length} event(s)
+            </span>
           </div>
-          <span className="rounded-full bg-brand-cream px-3 py-1 text-xs font-semibold text-brand-dark">
-            {activityRows.length} event(s)
-          </span>
         </div>
 
-        <div className="mt-3 overflow-x-auto">
+        <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
-            <thead className="bg-brand-cream/70 text-[11px] uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-3 py-2">#</th>
-                <th className="px-3 py-2">Time</th>
-                <th className="px-3 py-2">Category</th>
-                <th className="px-3 py-2">Enterprise</th>
-                <th className="px-3 py-2">Message</th>
+            <thead>
+              <tr className="bg-gray-50/50">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">#</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Enterprise</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Message</th>
               </tr>
             </thead>
-            <tbody>
-              {activityRows.map((log, index) => (
-                <tr key={log.id} className="border-t border-slate-100">
-                  <td className="px-3 py-2 text-xs font-semibold text-brand-dark">{index + 1}</td>
-                  <td className="px-3 py-2 text-xs text-slate-600">{log.time}</td>
-                  <td className="px-3 py-2 text-xs">
-                    <span className={`rounded-full px-2 py-1 font-semibold ${getSeverityClass(log.category)}`}>
+            <tbody className="divide-y divide-gray-100">
+              {activityRows.slice(0, 10).map((log, index) => (
+                <tr key={log.id} className="hover:bg-gray-50/50 transition-colors">
+                  <td className="px-6 py-4 text-xs font-semibold text-brand-dark">{index + 1}</td>
+                  <td className="px-6 py-4 text-xs text-gray-600">{log.time}</td>
+                  <td className="px-6 py-4 text-xs">
+                    <span className={`rounded-full px-2.5 py-1 font-medium ${getSeverityClass(log.category)}`}>
                       {log.category}
                     </span>
                   </td>
-                  <td className="px-3 py-2 text-xs font-semibold text-brand-dark">{log.enterprise}</td>
-                  <td className="px-3 py-2 text-xs text-slate-700">{log.message}</td>
+                  <td className="px-6 py-4 text-xs font-semibold text-brand-dark">{log.enterprise}</td>
+                  <td className="px-6 py-4 text-xs text-gray-700">{log.message}</td>
                 </tr>
               ))}
             </tbody>
@@ -414,43 +416,44 @@ export default function EnterpriseLogsView(): JSX.Element {
         </div>
 
         {!activityRows.length ? (
-          <p className="mt-3 rounded-xl bg-brand-cream px-3 py-4 text-center text-sm text-slate-600">
-            No activity logs available for this period.
-          </p>
-        ) : null}
-      </section>
-
-      <section className="rounded-2xl bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-2">
-            <h3 className="text-lg font-bold text-brand-dark">Compliance Monitor</h3>
-            <span
-              className={`inline-flex rounded-full px-3 py-1 text-sm font-medium ${
-                isWindowOpen
-                  ? 'bg-brand-mid/20 text-brand-dark'
-                  : 'bg-gray-200 text-gray-600'
-              }`}
-            >
-              Reporting Window: {isWindowOpen ? 'OPEN' : 'CLOSED'}
-            </span>
-            <p className="text-sm text-slate-600">
-              Command center for enterprise submissions, grouped by barangay.
-            </p>
+          <div className="p-8 text-center">
+            <p className="text-sm text-gray-500">No activity logs available for this period.</p>
           </div>
+        ) : null}
+      </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="p-6 border-b border-gray-100">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="space-y-2">
+              <h3 className="text-lg font-semibold text-brand-dark">Compliance Monitor</h3>
+              <span
+                className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${
+                  isWindowOpen
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    : 'bg-gray-100 text-gray-600 border border-gray-200'
+                }`}
+              >
+                Reporting Window: {isWindowOpen ? 'OPEN' : 'CLOSED'}
+              </span>
+              <p className="text-sm text-gray-500">
+                Command center for enterprise submissions, grouped by barangay.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
             <input
               type="month"
               value={period}
               onChange={(event) => setPeriod(event.target.value)}
-              className="rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-brand-mid focus:outline-none"
+              className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-mid focus:outline-none focus:ring-1 focus:ring-brand-mid/30 transition-colors"
             />
             <input
               type="search"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
               placeholder="Search enterprise, barangay, or ID"
-              className="w-72 rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-brand-mid focus:outline-none"
+              className="w-72 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-mid focus:outline-none focus:ring-1 focus:ring-brand-mid/30 transition-colors"
             />
             {isWindowOpen ? (
               <button
@@ -459,9 +462,9 @@ export default function EnterpriseLogsView(): JSX.Element {
                   void handleToggleReportingWindow();
                 }}
                 disabled={isTogglingWindow}
-                className="rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-70"
+                className="rounded-lg bg-red-500 px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-70"
               >
-                {isTogglingWindow ? 'Updating...' : 'CLOSE REPORTING WINDOW'}
+                {isTogglingWindow ? 'Updating...' : 'Close Window'}
               </button>
             ) : (
               <button
@@ -470,165 +473,168 @@ export default function EnterpriseLogsView(): JSX.Element {
                   void handleToggleReportingWindow();
                 }}
                 disabled={isTogglingWindow}
-                className="rounded-lg bg-green-600 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-70"
+                className="rounded-lg bg-emerald-500 px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-70"
               >
-                {isTogglingWindow ? 'Updating...' : 'OPEN REPORTING WINDOW'}
+                {isTogglingWindow ? 'Updating...' : 'Open Window'}
               </button>
             )}
             <button
               type="button"
               onClick={handleMassReminder}
-              className="rounded-lg bg-brand-accent px-3 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:opacity-90"
+              className="rounded-lg bg-brand-dark px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-brand-dark/90"
             >
               Mass Reminder
             </button>
+            </div>
           </div>
         </div>
 
-        <div className="mt-3 grid gap-3 md:grid-cols-3">
-          <article className="rounded-xl bg-brand-cream/70 p-3">
-            <p className="text-xs uppercase tracking-wide text-slate-500">Enterprises in View</p>
-            <p className="mt-1 text-2xl font-black text-brand-dark">{enterprisesInView.length}</p>
+        <div className="p-6 pt-4 grid gap-3 md:grid-cols-3">
+          <article className="rounded-lg bg-gray-50 border border-gray-100 p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Enterprises in View</p>
+            <p className="mt-2 text-2xl font-bold text-brand-dark">{enterprisesInView.length}</p>
           </article>
-          <article className="rounded-xl bg-brand-cream/70 p-3">
-            <p className="text-xs uppercase tracking-wide text-slate-500">Compliant</p>
-            <p className="mt-1 text-2xl font-black text-brand-dark">{compliantCount}</p>
+          <article className="rounded-lg bg-emerald-50 border border-emerald-100 p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-emerald-600">Compliant</p>
+            <p className="mt-2 text-2xl font-bold text-emerald-700">{compliantCount}</p>
           </article>
-          <article className="rounded-xl bg-brand-cream/70 p-3">
-            <p className="text-xs uppercase tracking-wide text-slate-500">Pending / Overdue</p>
-            <p className="mt-1 text-2xl font-black text-brand-accent">{pendingCount}</p>
+          <article className="rounded-lg bg-amber-50 border border-amber-100 p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-amber-600">Pending / Overdue</p>
+            <p className="mt-2 text-2xl font-bold text-amber-700">{pendingCount}</p>
           </article>
         </div>
 
         {actionFeedback ? (
-          <p className="mt-3 rounded-lg bg-brand-mid/15 px-3 py-2 text-xs font-medium text-brand-dark">
+          <div className="mx-6 mb-4 rounded-lg bg-blue-50 border border-blue-100 px-4 py-3 text-xs font-medium text-blue-700">
             {actionFeedback}
-          </p>
+          </div>
         ) : null}
 
         {feedback ? (
-          <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{feedback}</p>
+          <div className="mx-6 mb-4 rounded-lg bg-rose-50 border border-rose-100 px-4 py-3 text-sm font-medium text-rose-700">
+            {feedback}
+          </div>
         ) : null}
 
-        <div className="mt-4">
+        <div className="px-6 pb-6">
           {groupedBarangayEntries.map(([barangayName, barangayEnterprises]) => {
             const enterpriseCount = barangayEnterprises.length;
             const isExpanded = expandedSections[barangayName] ?? false;
 
             return (
-              <section key={barangayName} className="mb-4">
-                <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-                  <button
-                    type="button"
-                    onClick={() => toggleSection(barangayName)}
-                    className="flex w-full items-center justify-between gap-3 bg-gray-50 px-4 py-3 text-left transition-colors hover:bg-gray-100"
-                  >
-                    <h4 className="text-sm font-semibold text-brand-dark">
-                      Barangay {barangayName} ({enterpriseCount} registered enterprise{enterpriseCount !== 1 ? 's' : ''})
-                    </h4>
-                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-gray-200 text-gray-600">
-                      <svg
-                        className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        xmlns="http://www.w3.org/2000/svg"
-                        aria-hidden="true"
-                      >
-                        <path
-                          d="M6 9L12 15L18 9"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
+              <div key={barangayName} className="mb-3">
+                <div
+                  onClick={() => toggleSection(barangayName)}
+                  className="cursor-pointer bg-white border border-gray-200 p-4 flex justify-between items-center rounded-lg shadow-sm hover:border-brand-mid/30 transition-all"
+                >
+                  <h4 className="text-sm font-semibold text-brand-dark">
+                    Barangay {barangayName}
+                    <span className="ml-2 text-xs font-normal text-gray-500">
+                      ({enterpriseCount} enterprise{enterpriseCount !== 1 ? 's' : ''})
                     </span>
-                  </button>
-
-                  {isExpanded ? (
-                    <div>
-                      {barangayEnterprises.map((enterprise) => {
-                        const remindKey = `${enterprise.id}:REMIND`;
-                        const warnKey = `${enterprise.id}:WARN`;
-                        const renotifyKey = `${enterprise.id}:RENOTIFY`;
-                        const lastSubmission = latestSubmissionByEnterpriseId[enterprise.id] || null;
-                        const lastSubmissionLabel =
-                          lastSubmission
-                            ? formatDateTime(lastSubmission)
-                            : enterprise.has_submitted_for_period
-                              ? 'Submitted (timestamp unavailable)'
-                              : 'Pending';
-
-                        return (
-                          <div
-                            key={enterprise.id}
-                            className="flex flex-wrap items-center justify-between gap-4 border-t border-gray-100 p-4"
-                          >
-                            <div className="min-w-0">
-                              <p className="font-semibold text-brand-dark">{enterprise.company_name}</p>
-                              <p className="text-sm text-gray-500">{enterprise.category}</p>
-                            </div>
-
-                            <div className="min-w-[220px]">
-                              <span
-                                className={`rounded-full px-3 py-1 text-xs font-semibold ${complianceBadgeClass[enterprise.compliance_status]}`}
-                              >
-                                {enterprise.compliance_status}
-                              </span>
-                              <p className="mt-1 text-xs text-gray-500">Last submission: {lastSubmissionLabel}</p>
-                            </div>
-
-                            <div className="flex gap-2">
-                              <button
-                                type="button"
-                                onClick={() => handleComplianceAction(enterprise, 'REMIND')}
-                                disabled={isLoading || activeActionKey === remindKey}
-                                className="rounded border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                Remind
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => handleComplianceAction(enterprise, 'WARN')}
-                                disabled={isLoading || activeActionKey === warnKey}
-                                className="rounded border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-600 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                Warn
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => handleComplianceAction(enterprise, 'RENOTIFY')}
-                                disabled={isLoading || activeActionKey === renotifyKey}
-                                className="rounded border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                Re-notify
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : null}
+                  </h4>
+                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 text-gray-500">
+                    <svg
+                      className={`h-4 w-4 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M6 9L12 15L18 9"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </span>
                 </div>
-              </section>
+
+                {isExpanded ? (
+                  <div className="bg-gray-50/50 border border-gray-200 border-t-0 rounded-b-lg -mt-1 pt-1 overflow-hidden">
+                    {barangayEnterprises.map((enterprise) => {
+                      const remindKey = `${enterprise.id}:REMIND`;
+                      const warnKey = `${enterprise.id}:WARN`;
+                      const renotifyKey = `${enterprise.id}:RENOTIFY`;
+                      const lastSubmission = latestSubmissionByEnterpriseId[enterprise.id] || null;
+                      const lastSubmissionLabel =
+                        lastSubmission
+                          ? formatDateTime(lastSubmission)
+                          : enterprise.has_submitted_for_period
+                            ? 'Submitted (timestamp unavailable)'
+                            : 'Pending';
+
+                      return (
+                        <div
+                          key={enterprise.id}
+                          className="flex justify-between items-center p-4 border-b border-gray-100 last:border-b-0 hover:bg-gray-50/80 transition-colors"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium text-sm text-brand-dark">{enterprise.company_name}</p>
+                            <p className="text-xs text-gray-500 mt-0.5">{enterprise.category}</p>
+                          </div>
+
+                          <div className="min-w-[200px] text-right mr-4">
+                            <span
+                              className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${complianceBadgeClass[enterprise.compliance_status]}`}
+                            >
+                              {enterprise.compliance_status}
+                            </span>
+                            <p className="mt-1 text-xs text-gray-400">Last: {lastSubmissionLabel}</p>
+                          </div>
+
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleComplianceAction(enterprise, 'REMIND')}
+                              disabled={isLoading || activeActionKey === remindKey}
+                              className="text-xs px-3 py-1.5 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Remind
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleComplianceAction(enterprise, 'WARN')}
+                              disabled={isLoading || activeActionKey === warnKey}
+                              className="text-xs px-3 py-1.5 bg-amber-50 text-amber-600 rounded hover:bg-amber-100 font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Warn
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleComplianceAction(enterprise, 'RENOTIFY')}
+                              disabled={isLoading || activeActionKey === renotifyKey}
+                              className="text-xs px-3 py-1.5 bg-red-50 text-red-600 rounded hover:bg-red-100 font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Re-notify
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
             );
           })}
         </div>
 
         {isLoading ? (
-          <p className="mt-3 rounded-xl bg-brand-cream px-3 py-4 text-center text-sm text-slate-600">
-            Loading enterprise compliance logs...
-          </p>
+          <div className="mx-6 mb-6 rounded-lg bg-gray-50 border border-gray-100 px-4 py-6 text-center">
+            <p className="text-sm text-gray-500">Loading enterprise compliance logs...</p>
+          </div>
         ) : null}
 
         {!isLoading && !groupedBarangayEntries.length ? (
-          <p className="mt-3 rounded-xl bg-brand-cream px-3 py-4 text-center text-sm text-slate-600">
-            No enterprise compliance records found.
-          </p>
+          <div className="mx-6 mb-6 rounded-lg bg-gray-50 border border-gray-100 px-4 py-6 text-center">
+            <p className="text-sm text-gray-500">No enterprise compliance records found.</p>
+          </div>
         ) : null}
-      </section>
+      </div>
     </div>
   );
 }

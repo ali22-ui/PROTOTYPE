@@ -18,6 +18,7 @@ AUTHORITY_PACKAGES = {}
 ENTERPRISE_ACTION_LOGS = []
 CAMERA_SOURCE_STATES: dict[str, "SourceState"] = {}
 SYSTEM_SETTINGS = {}
+SUBMITTED_REPORTS: dict[str, dict] = {}  # Runtime storage for submitted reports
 
 
 def reset_runtime_state() -> None:
@@ -137,6 +138,22 @@ def set_reporting_window_open(
 
 def get_camera_source_states():
     return CAMERA_SOURCE_STATES
+
+
+def get_submitted_reports() -> dict[str, dict]:
+    """Get all submitted reports from runtime storage."""
+    return SUBMITTED_REPORTS
+
+
+def set_submitted_reports(reports: dict[str, dict]) -> None:
+    """Set the submitted reports in runtime storage."""
+    SUBMITTED_REPORTS.clear()
+    SUBMITTED_REPORTS.update(reports)
+
+
+def add_submitted_report(report_id: str, report: dict) -> None:
+    """Add a single submitted report to runtime storage."""
+    SUBMITTED_REPORTS[report_id] = report
 
 
 reset_runtime_state()

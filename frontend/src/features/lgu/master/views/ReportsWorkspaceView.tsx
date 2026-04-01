@@ -238,11 +238,18 @@ export default function ReportsWorkspaceView(): JSX.Element {
     const aggregatedFiles = reportPacks.length;
     const generatedReports = reportPacks.filter((report) => toReportLifecycleStatus(report) === 'GENERATED').length;
     const printedReports = reportPacks.filter((report) => toReportLifecycleStatus(report) === 'PRINTED').length;
+    
+    // Calculate total visitors from all submitted reports
+    const totalVisitors = reportPacks.reduce((sum, report) => {
+      const kpiVisitors = report.kpis?.total_visitors ?? report.kpis?.total_visitors_mtd ?? 0;
+      return sum + kpiVisitors;
+    }, 0);
 
     return {
       aggregatedFiles,
       generatedReports,
       printedReports,
+      totalVisitors,
     };
   }, [reportPacks]);
 
@@ -251,7 +258,7 @@ export default function ReportsWorkspaceView(): JSX.Element {
       return <div className="mt-2 h-9 w-20 animate-pulse rounded-lg bg-slate-200" />;
     }
 
-    return <p className={`mt-2 text-3xl font-black ${colorClass}`}>{value}</p>;
+    return <p className={`mt-2 text-3xl font-black ${colorClass}`}>{value.toLocaleString()}</p>;
   };
 
   const markPrinted = (reportId: string): void => {
@@ -322,11 +329,16 @@ export default function ReportsWorkspaceView(): JSX.Element {
 
   return (
     <div className="grid min-h-full gap-4">
-      <section className="grid gap-3 md:grid-cols-3">
+      <section className="grid gap-3 md:grid-cols-4">
         <article className="rounded-2xl border border-brand-light/70 bg-white p-4 shadow-sm">
           <p className="text-xs uppercase tracking-wide text-slate-500">Aggregated Files</p>
           {renderMetricValue(metrics.aggregatedFiles, 'text-brand-dark')}
           <p className="mt-1 text-sm text-slate-500">Total enterprise reports compiled.</p>
+        </article>
+        <article className="rounded-2xl border border-brand-light/70 bg-white p-4 shadow-sm">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Total Visitors</p>
+          {renderMetricValue(metrics.totalVisitors, 'text-violet-700')}
+          <p className="mt-1 text-sm text-slate-500">Across all submitted reports.</p>
         </article>
         <article className="rounded-2xl border border-brand-light/70 bg-white p-4 shadow-sm">
           <p className="text-xs uppercase tracking-wide text-slate-500">Generated Reports</p>

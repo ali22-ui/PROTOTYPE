@@ -6,6 +6,12 @@ class EnterpriseReportSubmission(BaseModel):
     enterprise_id: str
     period: str
     payload: dict | None = None
+    # KPI fields for flat storage (PRD_013 schema)
+    total_visitors: int | None = None
+    male_count: int | None = None
+    female_count: int | None = None
+    row_count: int | None = None
+    notes: str | None = None
 
 
 class EnterpriseActionRequest(BaseModel):

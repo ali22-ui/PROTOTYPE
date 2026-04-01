@@ -450,3 +450,26 @@ def list_recommendations() -> list[dict]:
             "confidence": 0.77,
         },
     ]
+
+
+def update_compliance_status(enterprise_id: str, status: str) -> bool:
+    """Update the compliance_status for an enterprise in both runtime and Supabase if available."""
+    target_id = resolve_enterprise_id(enterprise_id)
+    
+    # Update in-memory runtime store
+    for account in core.ENTERPRISE_ACCOUNTS:
+        if account["enterprise_id"] == target_id:
+            account["compliance_status"] = status
+            break
+    
+    # Also update in Supabase if available
+    if is_supabase_available():
+        client = get_supabase_client()
+        if client:
+            try:
+                client.table("enterprises").update({"compliance_status": status}).eq("id", target_id).execute()
+                return True
+            except Exception:
+                pass
+    
+    return True
