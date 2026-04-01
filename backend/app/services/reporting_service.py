@@ -324,19 +324,18 @@ def get_lgu_reports(period: str | None = None, enterprise_id: str | None = None)
             else:
                 reports = report_submission_repo.list_all()
         except Exception as exc:
-            logger.warning("Falling back to runtime report packs due to Supabase report read failure: %s", exc, exc_info=True)
-            reports = _normalize_runtime_reports(reporting_repository.list_report_packs(), period, enterprise_id)
-            warnings.append("Supabase reports unavailable; using runtime fallback data.")
+            logger.warning("Falling back to runtime submitted reports due to Supabase report read failure: %s", exc, exc_info=True)
+            runtime_submitted = _get_runtime_submitted_reports()
+            reports = _normalize_runtime_reports(runtime_submitted, period, enterprise_id)
+            warnings.append("Supabase reports unavailable; showing only runtime submitted reports.")
     else:
-        # Supabase not available - use runtime storage + core runtime packs
-        logger.info("Supabase unavailable, using runtime storage for reports")
+        # Supabase not available - show only reports submitted during this runtime session.
+        logger.info("Supabase unavailable, using runtime submitted reports only")
         runtime_submitted = _get_runtime_submitted_reports()
-        core_packs = reporting_repository.list_report_packs()
-        combined = runtime_submitted + core_packs
-        reports = _normalize_runtime_reports(combined, period, enterprise_id)
-        warnings.append("Database unavailable; showing runtime data.")
+        reports = _normalize_runtime_reports(runtime_submitted, period, enterprise_id)
+        warnings.append("Database unavailable; showing runtime submitted reports only.")
         warnings.append(
-            "Report submissions are temporarily unavailable from Supabase; showing runtime report fallback data."
+            "Report submissions from earlier sessions are unavailable while database access is down."
         )
 
     return {

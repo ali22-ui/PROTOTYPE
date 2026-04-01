@@ -8,11 +8,25 @@ import {
   generateAuthorityPackage,
 } from '@/features/lgu/master/api/apiService';
 import { subscribePortalBridge } from '@/lib/portalBridge';
+import { isSupabaseBrowserConfigured, supabase } from '@/lib/supabaseClient';
 import type { LguAuthorityPackage, LguReportPack } from '@/types';
 
 interface BarangayReportGroup {
   barangay: string;
   reports: LguReportPack[];
+}
+
+interface MonthlyReportRecord {
+  id: string;
+  enterprise_id: string | null;
+  enterprise_name: string | null;
+  barangay: string | null;
+  report_name: string | null;
+  reporting_period: string | null;
+  total_visitors: number | null;
+  demographics: Record<string, unknown> | null;
+  status: string | null;
+  submitted_at: string;
 }
 
 type ReportLifecycleStatus = 'SUBMITTED' | 'GENERATED' | 'PRINTED';
@@ -28,9 +42,18 @@ const triggerBrowserDownload = (blob: Blob, filename: string): void => {
   URL.revokeObjectURL(objectUrl);
 };
 
-const fallbackBarangayFromEnterpriseName = (enterpriseName: string): string | null => {
-  const stripped = enterpriseName.replace(/\s+Enterprise\s+Node$/i, '').trim();
-  if (stripped.length > 0 && stripped !== enterpriseName) {
+const fallbackBarangayFromEnterpriseName = (enterpriseName: unknown): string | null => {
+  if (typeof enterpriseName !== 'string') {
+    return null;
+  }
+
+  const normalizedName = enterpriseName.trim();
+  if (!normalizedName) {
+    return null;
+  }
+
+  const stripped = normalizedName.replace(/\s+Enterprise\s+Node$/i, '').trim();
+  if (stripped.length > 0 && stripped !== normalizedName) {
     return stripped;
   }
 
@@ -68,9 +91,36 @@ const toReportLifecycleStatus = (report: LguReportPack): ReportLifecycleStatus =
   return 'SUBMITTED';
 };
 
+const toSafeNumber = (value: unknown): number => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const isMissingMonthlyReportsTableError = (error: {
+  code?: string | null;
+  message?: string | null;
+  details?: string | null;
+}): boolean => {
+  const code = (error.code ?? '').toUpperCase();
+  const combinedMessage = `${error.message ?? ''} ${error.details ?? ''}`.toLowerCase();
+
+  if (code === 'PGRST205' || code === 'PGRST204') {
+    return true;
+  }
+
+  const mentionsMonthlyReports = combinedMessage.includes('monthly_reports');
+  const mentionsMissingSchemaObject =
+    combinedMessage.includes('schema cache')
+    || combinedMessage.includes('could not find the table')
+    || combinedMessage.includes('does not exist');
+
+  return mentionsMonthlyReports && mentionsMissingSchemaObject;
+};
+
 export default function ReportsWorkspaceView(): JSX.Element {
   const [period, setPeriod] = useState<string>(() => new Date().toISOString().slice(0, 7));
   const [reportPacks, setReportPacks] = useState<LguReportPack[]>([]);
+  const [isUsingSupabaseReports, setIsUsingSupabaseReports] = useState<boolean>(false);
   const [enterpriseBarangayById, setEnterpriseBarangayById] = useState<Record<string, string>>({});
   const [expandedBarangays, setExpandedBarangays] = useState<string[]>([]);
   const [selectedReportId, setSelectedReportId] = useState<string>('');
@@ -83,12 +133,111 @@ export default function ReportsWorkspaceView(): JSX.Element {
   const loadReportPacks = useCallback(async (): Promise<void> => {
     setIsLoadingReports(true);
     try {
+      if (isSupabaseBrowserConfigured && supabase) {
+        const { data: monthlyReports, error } = await supabase
+          .from('monthly_reports')
+          .select('*')
+          .order('submitted_at', { ascending: false });
+
+        if (!error) {
+          const rows = (monthlyReports ?? []) as MonthlyReportRecord[];
+          const mappedReports: LguReportPack[] = rows.map((row) => {
+            const demographics = (row.demographics ?? {}) as Record<string, unknown>;
+            const normalizedStatus = String(row.status || 'SUBMITTED').toUpperCase();
+
+            return {
+              report_id: row.id,
+              enterprise_id: row.enterprise_id ?? '',
+              enterprise_name: row.enterprise_name ?? 'Unknown Enterprise',
+              period: {
+                month: row.reporting_period ?? period,
+              },
+              submitted_at: row.submitted_at,
+              status: normalizedStatus,
+              report_status: normalizedStatus,
+              kpis: {
+                total_visitors: toSafeNumber(row.total_visitors),
+                total_visitors_mtd: toSafeNumber(row.total_visitors),
+                male_count: toSafeNumber(demographics.male),
+                female_count: toSafeNumber(demographics.female),
+              },
+            };
+          });
+
+          setReportPacks(mappedReports);
+
+          const barangayLookup = rows.reduce<Record<string, string>>((acc, row) => {
+            if (row.enterprise_id && row.barangay) {
+              acc[row.enterprise_id] = row.barangay;
+            }
+
+            return acc;
+          }, {});
+
+          setEnterpriseBarangayById(barangayLookup);
+          setIsUsingSupabaseReports(true);
+
+          setSelectedReportId((current) => {
+            if (current && mappedReports.some((report) => report.report_id === current)) {
+              return current;
+            }
+
+            return mappedReports[0]?.report_id || '';
+          });
+
+          return;
+        }
+
+        if (error) {
+          console.error('[ReportsWorkspaceView] SUPABASE SELECT ERROR:', {
+            message: error.message,
+            details: error.details,
+            hint: error.hint,
+            code: error.code,
+          });
+
+          if (!isMissingMonthlyReportsTableError(error)) {
+            throw new Error(`Database Error: ${error.message}`);
+          }
+
+          console.warn('[ReportsWorkspaceView] monthly_reports table unavailable; falling back to backend report APIs.');
+        }
+      }
+
       const [reportsPayload, accountsPayload] = await Promise.all([
         fetchLguReportPacks(period),
         fetchLguEnterpriseAccounts(period),
       ]);
 
-      setReportPacks(reportsPayload.reports);
+      const companyNameByEnterpriseId = accountsPayload.accounts.reduce<Record<string, string>>((acc, account) => {
+        if (account.enterprise_id && account.company_name) {
+          acc[account.enterprise_id] = account.company_name;
+        }
+
+        return acc;
+      }, {});
+
+      const hydratedReports = reportsPayload.reports.map((report) => {
+        const normalizedTotalVisitors = toSafeNumber(
+          report.kpis?.total_visitors ?? report.kpis?.total_visitors_mtd,
+        );
+
+        return {
+          ...report,
+          enterprise_name:
+            report.enterprise_name
+            || companyNameByEnterpriseId[report.enterprise_id]
+            || 'Unknown Enterprise',
+          kpis: {
+            ...(report.kpis || {}),
+            total_visitors: normalizedTotalVisitors,
+            total_visitors_mtd: normalizedTotalVisitors,
+          },
+        };
+      });
+
+      setReportPacks(hydratedReports);
+      setIsUsingSupabaseReports(false);
 
       const barangayLookup = accountsPayload.accounts.reduce<Record<string, string>>((acc, account) => {
         if (account.barangay) {
@@ -101,15 +250,16 @@ export default function ReportsWorkspaceView(): JSX.Element {
       setEnterpriseBarangayById(barangayLookup);
 
       setSelectedReportId((current) => {
-        if (current && reportsPayload.reports.some((report) => report.report_id === current)) {
+        if (current && hydratedReports.some((report) => report.report_id === current)) {
           return current;
         }
 
-        return reportsPayload.reports[0]?.report_id || '';
+        return hydratedReports[0]?.report_id || '';
       });
     } catch (error: unknown) {
       console.error('Failed to load LGU report packs:', error);
       setReportPacks([]);
+      setIsUsingSupabaseReports(false);
       setEnterpriseBarangayById({});
       setSelectedReportId('');
       setSelectedReportDetail(null);
@@ -134,6 +284,12 @@ export default function ReportsWorkspaceView(): JSX.Element {
       return;
     }
 
+    if (isUsingSupabaseReports && isSupabaseBrowserConfigured && supabase) {
+      const localDetail = reportPacks.find((report) => report.report_id === selectedReportId) ?? null;
+      setSelectedReportDetail(localDetail);
+      return;
+    }
+
     const loadReportDetail = async (): Promise<void> => {
       const detail = await fetchLguReportPackDetail(selectedReportId);
       setSelectedReportDetail(detail);
@@ -142,7 +298,7 @@ export default function ReportsWorkspaceView(): JSX.Element {
     void loadReportDetail().catch((error: unknown) => {
       console.error('Failed to load report detail:', error);
     });
-  }, [selectedReportId]);
+  }, [isUsingSupabaseReports, reportPacks, selectedReportId]);
 
   const selectedReport = useMemo<LguReportPack | null>(() => {
     return reportPacks.find((report) => report.report_id === selectedReportId) ?? null;

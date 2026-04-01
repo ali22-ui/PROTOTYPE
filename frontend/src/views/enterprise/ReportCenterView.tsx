@@ -4,6 +4,7 @@ import LguComplianceModal from '../../components/reports/LguComplianceModal';
 import type { EnterpriseOutletContext } from '@/components/layout/EnterpriseShell';
 import ErrorState from '@/components/ui/ErrorState';
 import LoadingState from '@/components/ui/LoadingState';
+import { isSupabaseBrowserConfigured, supabase } from '@/lib/supabaseClient';
 import { getComplianceStatusTheme, toControlStatusFromWindowStatus } from '@/lib/reportingStatus';
 import {
   fetchCameraLogs,
@@ -53,6 +54,41 @@ const downloadCsv = (rows: CameraLog[], fileName: string): void => {
   anchor.click();
   anchor.remove();
   URL.revokeObjectURL(url);
+};
+
+const isMissingMonthlyReportsTableError = (error: {
+  code?: string | null;
+  message?: string | null;
+  details?: string | null;
+}): boolean => {
+  const code = (error.code ?? '').toUpperCase();
+  const combinedMessage = `${error.message ?? ''} ${error.details ?? ''}`.toLowerCase();
+
+  if (code === 'PGRST205' || code === 'PGRST204') {
+    return true;
+  }
+
+  const mentionsMonthlyReports = combinedMessage.includes('monthly_reports');
+  const mentionsMissingSchemaObject =
+    combinedMessage.includes('schema cache')
+    || combinedMessage.includes('could not find the table')
+    || combinedMessage.includes('does not exist');
+
+  return mentionsMonthlyReports && mentionsMissingSchemaObject;
+};
+
+const isBackendConnectivityFailure = (error: unknown): boolean => {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return (
+    message.includes('network error')
+    || message.includes('unable to reach the server')
+    || message.includes('econnrefused')
+    || message.includes('failed to fetch')
+  );
 };
 
 export default function ReportCenterView(): JSX.Element {
@@ -186,6 +222,82 @@ export default function ReportCenterView(): JSX.Element {
         maleCount: summary.maleCount,
         femaleCount: summary.femaleCount,
       };
+
+      const persistedBarangay =
+        localStorage.getItem(`enterprise-barangay:${user.enterpriseId}`)
+        || localStorage.getItem('enterprise-barangay');
+      const barangay = persistedBarangay?.trim() || 'Unassigned';
+      const demographicsPayload = {
+        male: summaryStats.maleCount,
+        female: summaryStats.femaleCount,
+        tourists: summaryStats.touristCount,
+        residents: summaryStats.residentCount,
+        log_rows: logs.length,
+      };
+
+      if (isSupabaseBrowserConfigured && supabase) {
+        const payload = {
+          enterprise_id: user.enterpriseId,
+          enterprise_name: user.companyName,
+          barangay,
+          report_name: `Monthly Visitor Report - ${month}`,
+          reporting_period: month,
+          total_visitors: Number(summaryStats.totalVisitors) || 0,
+          demographics: demographicsPayload,
+          status: 'Submitted',
+        };
+
+        console.log('[ReportCenterView] Submitting monthly_reports payload:', payload);
+
+        const { data: inserted, error: insertError } = await supabase
+          .from('monthly_reports')
+          .insert([payload])
+          .select('*')
+          .single();
+
+        if (!insertError) {
+          const { error: complianceError } = await supabase
+            .from('enterprises')
+            .update({ compliance_status: 'Compliant' })
+            .eq('id', user.enterpriseId);
+
+          if (complianceError) {
+            console.error('[ReportCenterView] ENTERPRISE STATUS UPDATE ERROR:', {
+              message: complianceError.message,
+              details: complianceError.details,
+              hint: complianceError.hint,
+              code: complianceError.code,
+              enterpriseId: user.enterpriseId,
+            });
+          }
+
+          const reference = typeof inserted?.id === 'string'
+            ? inserted.id
+            : `${user.enterpriseId}-${month}`;
+
+          setSubmissionMessage(`✓ Report Submitted to LGU successfully! (${reference})`);
+          setHasSubmittedForMonth(true);
+          void refreshReportingWindowState();
+          return;
+        }
+
+        if (insertError) {
+          console.error('[ReportCenterView] SUPABASE INSERT ERROR:', {
+            message: insertError.message,
+            details: insertError.details,
+            hint: insertError.hint,
+            code: insertError.code,
+            payload,
+          });
+
+          if (!isMissingMonthlyReportsTableError(insertError)) {
+            setSubmissionMessage(`✗ Database Error: ${insertError.message}`);
+            return;
+          }
+
+          console.warn('[ReportCenterView] monthly_reports table unavailable; falling back to backend API submit.');
+        }
+      }
       
       console.log('[ReportCenterView] Submitting monthly report:', {
         enterpriseId: user.enterpriseId,
@@ -193,15 +305,84 @@ export default function ReportCenterView(): JSX.Element {
         logCount: logs.length,
         summaryStats,
       });
-      
-      const result = await submitMonthlyReport(user.enterpriseId, month, logs, summaryStats);
-      setSubmissionMessage(`✓ ${result.message} (${result.reportId})`);
-      setHasSubmittedForMonth(true);
-      void refreshReportingWindowState();
+
+      if (!isSupabaseBrowserConfigured || !supabase) {
+        console.warn('[ReportCenterView] Supabase browser client not configured; using backend API fallback.');
+      }
+
+      try {
+        const result = await submitMonthlyReport(user.enterpriseId, month, logs, summaryStats);
+        setSubmissionMessage(`✓ ${result.message} (${result.reportId})`);
+        setHasSubmittedForMonth(true);
+        void refreshReportingWindowState();
+        return;
+      } catch (backendError) {
+        console.error('[ReportCenterView] Backend submit fallback failed:', backendError);
+
+        if (isSupabaseBrowserConfigured && supabase && isBackendConnectivityFailure(backendError)) {
+          const fallbackReportId = `rpt_${user.enterpriseId}_${month.replace('-', '_')}`;
+          const directPayload = {
+            id: fallbackReportId,
+            enterprise_id: user.enterpriseId,
+            period: month,
+            linked_lgu_id: null as string | null,
+            status: 'SUBMITTED',
+            submitted_at: new Date().toISOString(),
+            submitted_by: user.enterpriseId,
+            total_visitors: Number(summaryStats.totalVisitors) || 0,
+            male_count: Number(summaryStats.maleCount) || 0,
+            female_count: Number(summaryStats.femaleCount) || 0,
+            row_count: logs.length,
+            notes: 'Submitted via frontend fallback while backend was unreachable.',
+          };
+
+          const { data: upsertedReport, error: upsertError } = await supabase
+            .from('report_submissions')
+            .upsert(directPayload, { onConflict: 'enterprise_id,period' })
+            .select('id')
+            .single();
+
+          if (!upsertError) {
+            const { error: complianceError } = await supabase
+              .from('enterprises')
+              .update({ compliance_status: 'Compliant' })
+              .eq('id', user.enterpriseId);
+
+            if (complianceError) {
+              console.error('[ReportCenterView] ENTERPRISE STATUS UPDATE ERROR (report_submissions fallback):', {
+                message: complianceError.message,
+                details: complianceError.details,
+                hint: complianceError.hint,
+                code: complianceError.code,
+                enterpriseId: user.enterpriseId,
+              });
+            }
+
+            const reference = typeof upsertedReport?.id === 'string'
+              ? upsertedReport.id
+              : fallbackReportId;
+
+            setSubmissionMessage(`✓ Report submitted via direct database fallback! (${reference})`);
+            setHasSubmittedForMonth(true);
+            void refreshReportingWindowState();
+            return;
+          }
+
+          console.error('[ReportCenterView] report_submissions fallback insert failed:', {
+            message: upsertError.message,
+            details: upsertError.details,
+            hint: upsertError.hint,
+            code: upsertError.code,
+            payload: directPayload,
+          });
+        }
+
+        throw backendError;
+      }
     } catch (err) {
-      console.error('[ReportCenterView] Submission failed:', err);
-      const message = err instanceof Error ? err.message : 'Failed to submit report.';
-      setSubmissionMessage(`✗ Error: ${message}`);
+      console.error('[ReportCenterView] UNEXPECTED NETWORK ERROR:', err);
+      const message = err instanceof Error ? err.message : 'Network Error. Check console for details.';
+      setSubmissionMessage(`✗ ${message}`);
     } finally {
       setSubmitting(false);
     }
