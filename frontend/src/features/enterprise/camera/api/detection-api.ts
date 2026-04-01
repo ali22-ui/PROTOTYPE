@@ -7,8 +7,10 @@ import type { PersonIdentity } from '../hooks/use-identity-registry';
 
 export interface DetectionBatchResponse {
   inserted_count: number;
+  failed_count?: number;
   updated_count?: number;
   message?: string;
+  error_summary?: string | null;
 }
 
 export interface VisitorStatisticsRow {

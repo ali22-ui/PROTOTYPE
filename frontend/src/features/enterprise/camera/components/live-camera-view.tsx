@@ -165,7 +165,10 @@ export default function LiveCameraView({
       const now = Date.now();
       const currentTime = videoRef.current.currentTime;
 
-      if (videoRef.current.readyState >= 2 && currentTime > lastVideoTimeRef.current + 0.01) {
+      if (
+        videoRef.current.readyState >= 2 &&
+        currentTime > lastVideoTimeRef.current + 0.01
+      ) {
         lastVideoTimeRef.current = currentTime;
         markFrameReceived();
         return;
@@ -247,8 +250,22 @@ export default function LiveCameraView({
     batchBufferRef.current = [];
 
     try {
-      await sendDetectionBatch(batch);
-      addDetectionLog(`Sent batch of ${batch.length} detections to server`);
+      const response = await sendDetectionBatch(batch);
+      const failedCount = response.failed_count ?? 0;
+      const insertedCount = response.inserted_count ?? 0;
+
+      if (failedCount > 0) {
+        const summary = response.error_summary
+          ? ` (${response.error_summary})`
+          : '';
+        addDetectionLog(
+          `Partial persistence: inserted ${insertedCount}, failed ${failedCount}.${summary}`,
+        );
+      } else {
+        addDetectionLog(
+          `Persisted batch: inserted ${insertedCount} detections`,
+        );
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       addDetectionLog(`Failed to send batch: ${message}`);
@@ -612,51 +629,50 @@ export default function LiveCameraView({
           ? 'Error'
           : 'Disconnected';
 
-  const overallStatusLabel =
-    !isStreaming
-      ? 'Offline'
-      : frameState === 'receiving'
-        ? 'Connected'
-        : frameState === 'blocked'
-          ? 'Blocked'
-          : 'Degraded';
+  const overallStatusLabel = !isStreaming
+    ? 'Offline'
+    : frameState === 'receiving'
+      ? 'Connected'
+      : frameState === 'blocked'
+        ? 'Blocked'
+        : 'Degraded';
 
   const aiStatusLabel =
-    detectionState === DetectionState.ERROR
-    || deduplication.faceEmbeddingState === FaceEmbeddingState.ERROR
+    detectionState === DetectionState.ERROR ||
+    deduplication.faceEmbeddingState === FaceEmbeddingState.ERROR
       ? 'Error'
-      : detectionState === DetectionState.LOADING
-      || deduplication.faceEmbeddingState === FaceEmbeddingState.LOADING
+      : detectionState === DetectionState.LOADING ||
+          deduplication.faceEmbeddingState === FaceEmbeddingState.LOADING
         ? 'Loading'
         : isClassificationReady && deduplication.isInitialized
           ? 'Ready'
           : 'Idle';
 
-    const trackedCount = deduplication.stats.activeTracks;
-    const uniqueCount = deduplication.stats.uniquePersons;
+  const trackedCount = deduplication.stats.activeTracks;
+  const uniqueCount = deduplication.stats.uniquePersons;
 
-    useEffect(() => {
-      if (!onStatsChange) {
-        return;
-      }
+  useEffect(() => {
+    if (!onStatsChange) {
+      return;
+    }
 
-      onStatsChange({
-        fps: Number.isFinite(fps) ? Math.max(0, Math.round(fps)) : 0,
-        tracked: trackedCount,
-        male: stats.maleCount,
-        female: stats.femaleCount,
-        unique: uniqueCount,
-        totalEvents: totalEventCount,
-      });
-    }, [
-      onStatsChange,
-      fps,
-      trackedCount,
-      stats.maleCount,
-      stats.femaleCount,
-      uniqueCount,
-      totalEventCount,
-    ]);
+    onStatsChange({
+      fps: Number.isFinite(fps) ? Math.max(0, Math.round(fps)) : 0,
+      tracked: trackedCount,
+      male: stats.maleCount,
+      female: stats.femaleCount,
+      unique: uniqueCount,
+      totalEvents: totalEventCount,
+    });
+  }, [
+    onStatsChange,
+    fps,
+    trackedCount,
+    stats.maleCount,
+    stats.femaleCount,
+    uniqueCount,
+    totalEventCount,
+  ]);
 
   return (
     <div className="space-y-3">
@@ -775,9 +791,7 @@ export default function LiveCameraView({
               </div>
               <div className="rounded-lg border border-brand-mid/70 bg-brand-bg px-3 py-2">
                 <p className="text-xs text-brand-dark/70">Tracked</p>
-                <p className="font-bold text-brand-dark">
-                  {trackedCount}
-                </p>
+                <p className="font-bold text-brand-dark">{trackedCount}</p>
               </div>
               <div className="rounded-lg border border-brand-mid/70 bg-brand-bg px-3 py-2">
                 <p className="text-xs text-brand-dark/70">Male</p>
@@ -795,9 +809,7 @@ export default function LiveCameraView({
               </div>
               <div className="rounded-lg border border-brand-mid/70 bg-brand-bg px-3 py-2">
                 <p className="text-xs text-brand-dark/70">Total Events</p>
-                <p className="font-bold text-brand-dark">
-                  {totalEventCount}
-                </p>
+                <p className="font-bold text-brand-dark">{totalEventCount}</p>
               </div>
             </div>
           </article>
@@ -813,9 +825,7 @@ export default function LiveCameraView({
               </div>
               <div className="flex items-center justify-between">
                 <span>Transport</span>
-                <span className="font-semibold">
-                  {transportStatusLabel}
-                </span>
+                <span className="font-semibold">{transportStatusLabel}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span>Frame State</span>

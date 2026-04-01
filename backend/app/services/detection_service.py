@@ -2,6 +2,7 @@
 Detection service for processing and storing camera ML detections.
 Handles batch inserts, real-time aggregation, and statistics.
 """
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -21,6 +22,10 @@ from app.schemas.detection import (
     VisitorStatistics,
 )
 from domain_exceptions import DomainServiceUnavailableError
+
+
+logger = logging.getLogger(__name__)
+_UNIFIED_TABLE_AVAILABLE: Optional[bool] = None
 
 
 def _month_bounds_utc(month: str) -> tuple[datetime, datetime]:
@@ -45,6 +50,63 @@ def _parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
         return dt.replace(tzinfo=timezone.utc)
 
     return dt.astimezone(timezone.utc)
+
+
+def _extract_error_metadata(error: Exception) -> tuple[str, str]:
+    """Extract PostgREST-like error code/message from generic exceptions."""
+    error_code = ""
+    error_message = str(error)
+
+    raw = error.args[0] if error.args else None
+    if isinstance(raw, dict):
+        maybe_code = raw.get("code")
+        maybe_message = raw.get("message")
+        if isinstance(maybe_code, str):
+            error_code = maybe_code
+        if isinstance(maybe_message, str) and maybe_message:
+            error_message = maybe_message
+
+    return error_code.upper(), error_message
+
+
+def _is_missing_unified_table_error(error: Exception) -> bool:
+    """Return True when unified_detections table is missing from active schema cache."""
+    error_code, error_message = _extract_error_metadata(error)
+    lowered = error_message.lower()
+    return error_code in {"PGRST205", "42P01"} or (
+        "unified_detections" in lowered and "could not find the table" in lowered
+    )
+
+
+def _is_camera_fk_error(error: Exception) -> bool:
+    """Return True for foreign-key failures against detection_events.camera_id."""
+    error_code, error_message = _extract_error_metadata(error)
+    lowered = error_message.lower()
+    return error_code == "23503" or (
+        "detection_events_camera_id_fkey" in lowered
+        or "key (camera_id)" in lowered
+    )
+
+
+def _is_unified_detections_available(client) -> bool:
+    """Probe unified table availability once and cache result for this process."""
+    global _UNIFIED_TABLE_AVAILABLE
+
+    if _UNIFIED_TABLE_AVAILABLE is not None:
+        return _UNIFIED_TABLE_AVAILABLE
+
+    try:
+        client.table("unified_detections").select("id").limit(1).execute()
+        _UNIFIED_TABLE_AVAILABLE = True
+    except Exception as error:
+        if _is_missing_unified_table_error(error):
+            logger.warning("Unified detections table is unavailable in active schema cache")
+            _UNIFIED_TABLE_AVAILABLE = False
+        else:
+            logger.warning("Unified detections availability probe failed: %s", error)
+            _UNIFIED_TABLE_AVAILABLE = False
+
+    return bool(_UNIFIED_TABLE_AVAILABLE)
 
 
 def _append_runtime_detection_events(events: list[DetectionEventCreate]) -> None:
@@ -74,6 +136,7 @@ def insert_detection_events(batch: DetectionBatchRequest) -> DetectionBatchRespo
     client = get_supabase_client()
     inserted = 0
     failed = 0
+    error_summary: Optional[str] = None
 
     try:
         records = [
@@ -85,17 +148,24 @@ def insert_detection_events(batch: DetectionBatchRequest) -> DetectionBatchRespo
                 "sex": event.sex.value,
                 "confidence_person": event.confidence_person,
                 "confidence_sex": event.confidence_sex,
-                "bbox_x": int(event.bbox_x),
-                "bbox_y": int(event.bbox_y),
-                "bbox_w": int(event.bbox_w),
-                "bbox_h": int(event.bbox_h),
                 "dwell_seconds": event.dwell_seconds,
-                "first_seen": event.first_seen.isoformat(),
             }
             for event in batch.events
         ]
 
-        result = client.table("detection_events").insert(records).execute()
+        try:
+            result = client.table("detection_events").insert(records).execute()
+        except Exception as insert_error:
+            if not _is_camera_fk_error(insert_error):
+                raise
+
+            logger.warning(
+                "camera_id foreign-key mismatch detected; retrying detection insert with null camera_id"
+            )
+            for record in records:
+                record["camera_id"] = None
+            result = client.table("detection_events").insert(records).execute()
+
         inserted = len(result.data) if result.data else 0
         failed = len(batch.events) - inserted
 
@@ -103,13 +173,16 @@ def insert_detection_events(batch: DetectionBatchRequest) -> DetectionBatchRespo
             _append_runtime_detection_events(batch.events)
 
     except Exception as e:
-        print(f"Error inserting detection events: {e}")
+        error_code, error_message = _extract_error_metadata(e)
+        error_summary = f"{error_code}: {error_message}" if error_code else error_message
+        logger.exception("Error inserting detection events")
         failed = len(batch.events)
 
     return DetectionBatchResponse(
         inserted_count=inserted,
         failed_count=failed,
         message="Success" if failed == 0 else f"Partial failure: {failed} events failed",
+        error_summary=error_summary,
     )
 
 
@@ -127,9 +200,20 @@ def insert_unified_detection_events(
         )
 
     client = get_supabase_client()
+
+    if not _is_unified_detections_available(client):
+        return UnifiedDetectionBatchResponse(
+            inserted_count=0,
+            updated_count=0,
+            failed_count=len(batch.events),
+            message="Unified detection persistence unavailable in current schema.",
+            error_summary="PGRST205: unified_detections table is missing from Supabase schema cache.",
+        )
+
     inserted = 0
     updated = 0
     failed = 0
+    error_summary: Optional[str] = None
 
     for event in batch.events:
         try:
@@ -164,7 +248,18 @@ def insert_unified_detection_events(
                 inserted += 1
 
         except Exception as e:
-            print(f"Error processing unified event {event.person_id}: {e}")
+            if _is_missing_unified_table_error(e):
+                return UnifiedDetectionBatchResponse(
+                    inserted_count=inserted,
+                    updated_count=updated,
+                    failed_count=failed + (len(batch.events) - inserted - updated),
+                    message="Unified detection persistence unavailable in current schema.",
+                    error_summary="PGRST205: unified_detections table is missing from Supabase schema cache.",
+                )
+
+            error_code, error_message = _extract_error_metadata(e)
+            error_summary = f"{error_code}: {error_message}" if error_code else error_message
+            logger.exception("Error processing unified event %s", event.person_id)
             failed += 1
 
     # Update aggregated statistics
@@ -177,6 +272,7 @@ def insert_unified_detection_events(
         updated_count=updated,
         failed_count=failed,
         message="Success" if failed == 0 else f"Partial failure: {failed} events failed",
+        error_summary=error_summary,
     )
 
 
@@ -216,9 +312,9 @@ def _update_unified_statistics(events: list[UnifiedDetectionEvent]) -> None:
 
         if key not in aggregates:
             aggregates[key] = {
-                "male_total": 0,
-                "female_total": 0,
-                "unknown_total": 0,
+                "male_count": 0,
+                "female_count": 0,
+                "unknown_count": 0,
                 "unique_persons": set(),
                 "total_dwell": 0,
                 "reid_geometric": 0,
@@ -231,11 +327,11 @@ def _update_unified_statistics(events: list[UnifiedDetectionEvent]) -> None:
         agg["total_dwell"] += event.total_dwell_seconds
 
         if event.gender == GenderType.MALE:
-            agg["male_total"] += 1
+            agg["male_count"] += 1
         elif event.gender == GenderType.FEMALE:
-            agg["female_total"] += 1
+            agg["female_count"] += 1
         else:
-            agg["unknown_total"] += 1
+            agg["unknown_count"] += 1
 
         if event.reid_method == ReIdentificationMethod.GEOMETRIC:
             agg["reid_geometric"] += 1
@@ -261,23 +357,14 @@ def _update_unified_statistics(events: list[UnifiedDetectionEvent]) -> None:
                 .execute()
             )
 
-            dedup_stats = {
-                "total_tracks": sum(len(e.track_ids) for e in events if e.enterprise_id == enterprise_id),
-                "unique_persons": unique_count,
-                "reid_by_geometric": counts["reid_geometric"],
-                "reid_by_appearance": counts["reid_appearance"],
-                "reid_by_face": counts["reid_face"],
-            }
-
             if existing.data:
                 record = existing.data[0]
                 updates = {
-                    "male_total": record.get("male_total", 0) + counts["male_total"],
-                    "female_total": record.get("female_total", 0) + counts["female_total"],
-                    "unknown_total": record.get("unknown_total", 0) + counts["unknown_total"],
+                    "male_count": record.get("male_count", 0) + counts["male_count"],
+                    "female_count": record.get("female_count", 0) + counts["female_count"],
+                    "unknown_count": record.get("unknown_count", 0) + counts["unknown_count"],
                     "unique_visitors": record.get("unique_visitors", 0) + unique_count,
                     "avg_dwell_seconds": avg_dwell,
-                    "dedup_stats": dedup_stats,
                     "updated_at": datetime.now(timezone.utc).isoformat(),
                 }
                 client.table("visitor_statistics").update(updates).eq("id", record["id"]).execute()
@@ -286,17 +373,16 @@ def _update_unified_statistics(events: list[UnifiedDetectionEvent]) -> None:
                     "enterprise_id": enterprise_id,
                     "date": date_str,
                     "hour": hour,
-                    "male_total": counts["male_total"],
-                    "female_total": counts["female_total"],
-                    "unknown_total": counts["unknown_total"],
+                    "male_count": counts["male_count"],
+                    "female_count": counts["female_count"],
+                    "unknown_count": counts["unknown_count"],
                     "unique_visitors": unique_count,
                     "avg_dwell_seconds": avg_dwell,
-                    "dedup_stats": dedup_stats,
                 }
                 client.table("visitor_statistics").insert(new_record).execute()
 
         except Exception as e:
-            print(f"Error updating unified statistics for {key}: {e}")
+            logger.exception("Error updating unified statistics for %s", key)
 
 
 def get_visitor_statistics(
@@ -328,9 +414,9 @@ def get_visitor_statistics(
             enterprise_id=row["enterprise_id"],
             date=row["date"],
             hour=row.get("hour"),
-            male_total=row.get("male_total", 0),
-            female_total=row.get("female_total", 0),
-            unknown_total=row.get("unknown_total", 0),
+            male_total=row.get("male_total", row.get("male_count", 0)),
+            female_total=row.get("female_total", row.get("female_count", 0)),
+            unknown_total=row.get("unknown_total", row.get("unknown_count", 0)),
             unique_visitors=row.get("unique_visitors", 0),
             avg_dwell_seconds=row.get("avg_dwell_seconds"),
             dedup_stats=DeduplicationStats(**row["dedup_stats"]) if row.get("dedup_stats") else None,
@@ -349,10 +435,15 @@ def get_deduplication_stats(
     """
     if not is_supabase_available():
         # Return empty stats - statistical test data should be seeded via script
-        return DeduplicationStats()
+        return DeduplicationStats(warning="Unified deduplication metrics unavailable: database service is offline.")
 
     client = get_supabase_client()
     target_date = date or datetime.now().strftime("%Y-%m-%d")
+
+    if not _is_unified_detections_available(client):
+        return DeduplicationStats(
+            warning="Unified deduplication metrics unavailable: unified_detections table is not present in current schema."
+        )
 
     try:
         result = (
@@ -385,8 +476,10 @@ def get_deduplication_stats(
         )
 
     except Exception as e:
-        print(f"Error getting deduplication stats: {e}")
-        return DeduplicationStats()
+        logger.exception("Error getting deduplication stats")
+        return DeduplicationStats(
+            warning="Unified deduplication metrics unavailable due to a temporary backend read error."
+        )
 
 
 def update_visitor_statistics(event: DetectionEventCreate) -> None:
@@ -421,11 +514,11 @@ def update_visitor_statistics(event: DetectionEventCreate) -> None:
             }
 
             if event.sex == GenderType.MALE:
-                updates["male_total"] = record.get("male_total", 0) + 1
+                updates["male_count"] = record.get("male_count", 0) + 1
             elif event.sex == GenderType.FEMALE:
-                updates["female_total"] = record.get("female_total", 0) + 1
+                updates["female_count"] = record.get("female_count", 0) + 1
             else:
-                updates["unknown_total"] = record.get("unknown_total", 0) + 1
+                updates["unknown_count"] = record.get("unknown_count", 0) + 1
 
             client.table("visitor_statistics").update(updates).eq("id", record["id"]).execute()
         else:
@@ -434,15 +527,15 @@ def update_visitor_statistics(event: DetectionEventCreate) -> None:
                 "enterprise_id": event.enterprise_id,
                 "date": date_str,
                 "hour": hour,
-                "male_total": 1 if event.sex == GenderType.MALE else 0,
-                "female_total": 1 if event.sex == GenderType.FEMALE else 0,
-                "unknown_total": 1 if event.sex == GenderType.UNKNOWN else 0,
+                "male_count": 1 if event.sex == GenderType.MALE else 0,
+                "female_count": 1 if event.sex == GenderType.FEMALE else 0,
+                "unknown_count": 1 if event.sex == GenderType.UNKNOWN else 0,
                 "unique_visitors": 1,
             }
             client.table("visitor_statistics").insert(new_record).execute()
 
     except Exception as e:
-        print(f"Error updating visitor statistics: {e}")
+        logger.exception("Error updating visitor statistics")
 
 
 def aggregate_statistics_batch(events: list[DetectionEventCreate]) -> None:
@@ -464,18 +557,18 @@ def aggregate_statistics_batch(events: list[DetectionEventCreate]) -> None:
 
         if key not in aggregates:
             aggregates[key] = {
-                "male_total": 0,
-                "female_total": 0,
-                "unknown_total": 0,
+                "male_count": 0,
+                "female_count": 0,
+                "unknown_count": 0,
             }
             unique_tracks[key] = set()
 
         if event.sex == GenderType.MALE:
-            aggregates[key]["male_total"] += 1
+            aggregates[key]["male_count"] += 1
         elif event.sex == GenderType.FEMALE:
-            aggregates[key]["female_total"] += 1
+            aggregates[key]["female_count"] += 1
         else:
-            aggregates[key]["unknown_total"] += 1
+            aggregates[key]["unknown_count"] += 1
 
         unique_tracks[key].add(event.track_id)
 
@@ -496,9 +589,9 @@ def aggregate_statistics_batch(events: list[DetectionEventCreate]) -> None:
             if existing.data:
                 record = existing.data[0]
                 updates = {
-                    "male_total": record.get("male_total", 0) + counts["male_total"],
-                    "female_total": record.get("female_total", 0) + counts["female_total"],
-                    "unknown_total": record.get("unknown_total", 0) + counts["unknown_total"],
+                    "male_count": record.get("male_count", 0) + counts["male_count"],
+                    "female_count": record.get("female_count", 0) + counts["female_count"],
+                    "unknown_count": record.get("unknown_count", 0) + counts["unknown_count"],
                     "unique_visitors": record.get("unique_visitors", 0) + len(unique_tracks[key]),
                     "updated_at": datetime.now(timezone.utc).isoformat(),
                 }
@@ -508,15 +601,15 @@ def aggregate_statistics_batch(events: list[DetectionEventCreate]) -> None:
                     "enterprise_id": enterprise_id,
                     "date": date_str,
                     "hour": hour,
-                    "male_total": counts["male_total"],
-                    "female_total": counts["female_total"],
-                    "unknown_total": counts["unknown_total"],
+                    "male_count": counts["male_count"],
+                    "female_count": counts["female_count"],
+                    "unknown_count": counts["unknown_count"],
                     "unique_visitors": len(unique_tracks[key]),
                 }
                 client.table("visitor_statistics").insert(new_record).execute()
 
         except Exception as e:
-            print(f"Error aggregating statistics for {key}: {e}")
+            logger.exception("Error aggregating statistics for %s", key)
 
 
 def cleanup_old_detections() -> int:
@@ -540,7 +633,7 @@ def cleanup_old_detections() -> int:
         )
         return len(result.data) if result.data else 0
     except Exception as e:
-        print(f"Error cleaning up old detections: {e}")
+        logger.exception("Error cleaning up old detections")
         return 0
 
 
@@ -576,7 +669,7 @@ def get_recent_detection_feed(
     try:
         result = query.order("timestamp", desc=True).limit(bounded_limit).execute()
     except Exception as error:
-        print(f"Error loading recent detection feed: {error}")
+        logger.exception("Error loading recent detection feed")
         return []
 
     rows = result.data or []
@@ -624,7 +717,7 @@ def get_camera_log_sessions(
 
     query = (
         client.table("detection_events")
-        .select("track_id,timestamp,first_seen,sex,dwell_seconds")
+        .select("track_id,timestamp,sex,dwell_seconds")
         .eq("enterprise_id", enterprise_id)
     )
 
@@ -638,7 +731,7 @@ def get_camera_log_sessions(
     try:
         result = query.order("timestamp", desc=True).limit(fetch_limit).execute()
     except Exception as error:
-        print(f"Error loading camera log sessions: {error}")
+        logger.exception("Error loading camera log sessions")
         return []
 
     rows = result.data or []
@@ -650,8 +743,8 @@ def get_camera_log_sessions(
             continue
 
         timestamp = _parse_iso_datetime(str(row.get("timestamp") or ""))
-        first_seen = _parse_iso_datetime(str(row.get("first_seen") or "")) or timestamp
-        if not timestamp or not first_seen:
+        first_seen = timestamp
+        if not timestamp:
             continue
 
         entry = grouped.get(track_id)

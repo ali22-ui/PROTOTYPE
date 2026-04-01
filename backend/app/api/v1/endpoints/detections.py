@@ -30,9 +30,10 @@ async def create_detection_batch(batch: DetectionBatchRequest):
     Maximum batch size is 100 events.
     """
     result = detection_service.insert_detection_events(batch)
-    
-    # Update aggregated statistics
-    detection_service.aggregate_statistics_batch(batch.events)
+
+    # Only aggregate if persistence succeeded for the submitted batch.
+    if result.failed_count == 0 and result.inserted_count > 0:
+        detection_service.aggregate_statistics_batch(batch.events)
     
     return result
 

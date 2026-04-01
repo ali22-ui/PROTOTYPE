@@ -63,11 +63,15 @@ export default function IPCameraView({
   const batchBufferRef = useRef<DetectionBatchEvent[]>([]);
   const lastBatchTimeRef = useRef(Date.now());
 
-  const [sourceState, setSourceState] = useState<CameraSourceState | null>(null);
+  const [sourceState, setSourceState] = useState<CameraSourceState | null>(
+    null,
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
-  const [frameState, setFrameState] = useState<'idle' | 'receiving' | 'stalled' | 'blocked'>('idle');
+  const [frameState, setFrameState] = useState<
+    'idle' | 'receiving' | 'stalled' | 'blocked'
+  >('idle');
   const [showDeduplicationStats] = useState(true);
   const [detectionLogs, setDetectionLogs] = useState<string[]>([]);
   const [, setIsDetectionActive] = useState(false);
@@ -118,8 +122,22 @@ export default function IPCameraView({
     batchBufferRef.current = [];
 
     try {
-      await sendDetectionBatch(batch);
-      addDetectionLog(`Sent batch of ${batch.length} detections to server`);
+      const response = await sendDetectionBatch(batch);
+      const failedCount = response.failed_count ?? 0;
+      const insertedCount = response.inserted_count ?? 0;
+
+      if (failedCount > 0) {
+        const summary = response.error_summary
+          ? ` (${response.error_summary})`
+          : '';
+        addDetectionLog(
+          `Partial persistence: inserted ${insertedCount}, failed ${failedCount}.${summary}`,
+        );
+      } else {
+        addDetectionLog(
+          `Persisted batch: inserted ${insertedCount} detections`,
+        );
+      }
     } catch (err: unknown) {
       console.error('Failed to send detection batch:', err);
       const message = err instanceof Error ? err.message : 'Unknown error';
@@ -127,34 +145,36 @@ export default function IPCameraView({
     }
   }, [addDetectionLog]);
 
-  const fetchSourceState = useCallback(async (): Promise<CameraSourceState | null> => {
-    try {
-      const data = await fetchCameraSource();
-      setSourceState(data);
-      return data;
-    } catch (err) {
-      console.error('Failed to fetch source state:', err);
-      return null;
-    }
-  }, []);
+  const fetchSourceState =
+    useCallback(async (): Promise<CameraSourceState | null> => {
+      try {
+        const data = await fetchCameraSource();
+        setSourceState(data);
+        return data;
+      } catch (err) {
+        console.error('Failed to fetch source state:', err);
+        return null;
+      }
+    }, []);
 
-  const switchToIPCamera = useCallback(async (): Promise<CameraSourceState | null> => {
-    setIsLoading(true);
-    setStreamError(null);
-    try {
-      const result = await setCameraSource('ip_webcam');
-      setSourceState(result);
-      addDetectionLog('Switched to IP Webcam mode');
-      return result;
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      setStreamError(`Failed to switch source: ${message}`);
-      addDetectionLog(`Source switch failed: ${message}`);
-      return null;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [addDetectionLog]);
+  const switchToIPCamera =
+    useCallback(async (): Promise<CameraSourceState | null> => {
+      setIsLoading(true);
+      setStreamError(null);
+      try {
+        const result = await setCameraSource('ip_webcam');
+        setSourceState(result);
+        addDetectionLog('Switched to IP Webcam mode');
+        return result;
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        setStreamError(`Failed to switch source: ${message}`);
+        addDetectionLog(`Source switch failed: ${message}`);
+        return null;
+      } finally {
+        setIsLoading(false);
+      }
+    }, [addDetectionLog]);
 
   const startIPStream = useCallback(async (): Promise<void> => {
     setIsLoading(true);
@@ -185,7 +205,13 @@ export default function IPCameraView({
     setIsStreaming(true);
     setIsLoading(false);
     addDetectionLog('IP webcam stream started');
-  }, [sourceState, switchToIPCamera, loadGenderModel, deduplication, addDetectionLog]);
+  }, [
+    sourceState,
+    switchToIPCamera,
+    loadGenderModel,
+    deduplication,
+    addDetectionLog,
+  ]);
 
   const stopIPStream = useCallback((): void => {
     setIsStreaming(false);
@@ -329,32 +355,37 @@ export default function IPCameraView({
         videoElement,
       );
 
-      const detectionForClassification = deduplicatedDetections.map((detection) => ({
-        ...detection,
-        dwellSeconds: detection.dwellSeconds ?? 0,
-        bbox: detection.bboxPercent || {
-          x: (detection.bbox.originX / (videoElement.videoWidth || 1)) * 100,
-          y: (detection.bbox.originY / (videoElement.videoHeight || 1)) * 100,
-          w: (detection.bbox.width / (videoElement.videoWidth || 1)) * 100,
-          h: (detection.bbox.height / (videoElement.videoHeight || 1)) * 100,
-        },
-      }));
+      const detectionForClassification = deduplicatedDetections.map(
+        (detection) => ({
+          ...detection,
+          dwellSeconds: detection.dwellSeconds ?? 0,
+          bbox: detection.bboxPercent || {
+            x: (detection.bbox.originX / (videoElement.videoWidth || 1)) * 100,
+            y: (detection.bbox.originY / (videoElement.videoHeight || 1)) * 100,
+            w: (detection.bbox.width / (videoElement.videoWidth || 1)) * 100,
+            h: (detection.bbox.height / (videoElement.videoHeight || 1)) * 100,
+          },
+        }),
+      );
 
       const classified = isClassificationReady
         ? await classifyDetections(videoElement, detectionForClassification)
         : detectionForClassification.map((detection) => ({
-          ...detection,
-          sex: Gender.UNKNOWN,
-          sexConfidence: 0,
-        }));
+            ...detection,
+            sex: Gender.UNKNOWN,
+            sexConfidence: 0,
+          }));
 
       let newMale = 0;
       let newFemale = 0;
       let newUnknown = 0;
 
       for (const detection of classified) {
-        const normalizedBbox = detection.bboxPercent
-          || (detection.bbox && 'x' in detection.bbox ? detection.bbox : undefined);
+        const normalizedBbox =
+          detection.bboxPercent ||
+          (detection.bbox && 'x' in detection.bbox
+            ? detection.bbox
+            : undefined);
 
         if (detection.sex === Gender.MALE) newMale += 1;
         else if (detection.sex === Gender.FEMALE) newFemale += 1;
@@ -395,13 +426,15 @@ export default function IPCameraView({
               `${d.sex === Gender.MALE ? 'Male' : d.sex === Gender.FEMALE ? 'Female' : 'Unknown'}`,
           )
           .join(', ');
-        addDetectionLog(`[${uniqueCount} unique] ${classified.length} detection(s): ${labels}`);
+        addDetectionLog(
+          `[${uniqueCount} unique] ${classified.length} detection(s): ${labels}`,
+        );
       }
 
       const now = Date.now();
       if (
-        batchBufferRef.current.length >= MAX_BATCH_SIZE
-        || now - lastBatchTimeRef.current >= BATCH_INTERVAL_MS
+        batchBufferRef.current.length >= MAX_BATCH_SIZE ||
+        now - lastBatchTimeRef.current >= BATCH_INTERVAL_MS
       ) {
         lastBatchTimeRef.current = now;
         void flushBatch();
@@ -423,10 +456,7 @@ export default function IPCameraView({
   const renderHealthStatus = (forDarkSurface = false): JSX.Element | null => {
     if (!sourceState?.health) return null;
 
-    const {
-      status,
-      latency_ms: latencyMs,
-    } = sourceState.health;
+    const { status, latency_ms: latencyMs } = sourceState.health;
 
     return (
       <div className="flex items-center gap-2">
@@ -437,18 +467,25 @@ export default function IPCameraView({
         ) : (
           <WifiOff size={16} className="text-red-500" />
         )}
-        <span className={`text-sm font-medium ${
-          status === SourceStatus.ONLINE ? 'text-emerald-600' :
-            status === SourceStatus.DEGRADED ? 'text-amber-600' :
-              'text-red-600'
-        }`}
+        <span
+          className={`text-sm font-medium ${
+            status === SourceStatus.ONLINE
+              ? 'text-emerald-600'
+              : status === SourceStatus.DEGRADED
+                ? 'text-amber-600'
+                : 'text-red-600'
+          }`}
         >
-          {status === SourceStatus.ONLINE ? 'Connected' :
-            status === SourceStatus.DEGRADED ? 'Degraded' :
-              'Offline'}
+          {status === SourceStatus.ONLINE
+            ? 'Connected'
+            : status === SourceStatus.DEGRADED
+              ? 'Degraded'
+              : 'Offline'}
         </span>
         {latencyMs && (
-          <span className={`text-xs ${forDarkSurface ? 'text-slate-300/80' : 'text-slate-500'}`}>
+          <span
+            className={`text-xs ${forDarkSurface ? 'text-slate-300/80' : 'text-slate-500'}`}
+          >
             ({Math.round(latencyMs)}ms)
           </span>
         )}
@@ -500,7 +537,9 @@ export default function IPCameraView({
           <Smartphone size={56} className="text-slate-300" />
 
           <div>
-            <h3 className="text-xl font-semibold text-white">Mobile IP Camera</h3>
+            <h3 className="text-xl font-semibold text-white">
+              Mobile IP Camera
+            </h3>
             <p className="mt-2 text-sm text-slate-300">
               Connect your Android IP Webcam for real-time detection.
             </p>
@@ -572,7 +611,8 @@ export default function IPCameraView({
       ? 'Connected'
       : frameState === 'blocked'
         ? 'Blocked'
-        : transportStatusLabel === 'Connected' || transportStatusLabel === 'Degraded'
+        : transportStatusLabel === 'Connected' ||
+            transportStatusLabel === 'Degraded'
           ? 'Degraded'
           : 'Offline';
 
@@ -600,17 +640,28 @@ export default function IPCameraView({
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-          <p><span className="font-semibold">Overall:</span> {overallStatusLabel}</p>
-          <p><span className="font-semibold">Transport:</span> {transportStatusLabel}</p>
-          <p><span className="font-semibold">Frame:</span> {frameStatusLabel}</p>
-          <p><span className="font-semibold">AI:</span> {aiStatusLabel}</p>
+          <p>
+            <span className="font-semibold">Overall:</span> {overallStatusLabel}
+          </p>
+          <p>
+            <span className="font-semibold">Transport:</span>{' '}
+            {transportStatusLabel}
+          </p>
+          <p>
+            <span className="font-semibold">Frame:</span> {frameStatusLabel}
+          </p>
+          <p>
+            <span className="font-semibold">AI:</span> {aiStatusLabel}
+          </p>
         </div>
 
         <div className="flex items-center gap-3">
           {isDetecting && (
             <div className="flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-1">
               <Zap size={14} className="text-emerald-600" />
-              <span className="text-sm font-medium text-emerald-700">{fps} FPS</span>
+              <span className="text-sm font-medium text-emerald-700">
+                {fps} FPS
+              </span>
             </div>
           )}
 
@@ -649,7 +700,13 @@ export default function IPCameraView({
       </div>
 
       {/* Video stream */}
-      <div className={compactLayout ? 'space-y-4' : 'grid grid-cols-1 gap-4 lg:grid-cols-3 lg:items-start'}>
+      <div
+        className={
+          compactLayout
+            ? 'space-y-4'
+            : 'grid grid-cols-1 gap-4 lg:grid-cols-3 lg:items-start'
+        }
+      >
         <div className={compactLayout ? 'relative' : 'relative lg:col-span-2'}>
           <div className="relative flex aspect-video w-full flex-col items-center justify-center overflow-hidden rounded-lg bg-black shadow-inner">
             {/* MJPEG stream image */}
@@ -663,12 +720,7 @@ export default function IPCameraView({
             />
 
             {/* Hidden video element for detection (if needed) */}
-            <video
-              ref={videoRef}
-              className="hidden"
-              muted
-              playsInline
-            />
+            <video ref={videoRef} className="hidden" muted playsInline />
 
             {/* Detection overlay canvas */}
             <canvas
@@ -699,58 +751,77 @@ export default function IPCameraView({
         {/* Stats sidebar */}
         {!compactLayout ? (
           <div className="space-y-4">
-          {/* Deduplication stats */}
-          {showDeduplicationStats && (
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="mb-3 flex items-center gap-2">
-                <Users size={18} className="text-emerald-600" />
-                <h3 className="font-semibold text-slate-800">Detection Stats</h3>
-              </div>
+            {/* Deduplication stats */}
+            {showDeduplicationStats && (
+              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="mb-3 flex items-center gap-2">
+                  <Users size={18} className="text-emerald-600" />
+                  <h3 className="font-semibold text-slate-800">
+                    Detection Stats
+                  </h3>
+                </div>
 
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-slate-600">Unique Persons</span>
-                  <span className="font-bold text-emerald-600">
-                    {uniqueCount}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-slate-600">Total Detections</span>
-                  <span className="font-medium text-slate-700">{totalEventCount}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-slate-600">Male</span>
-                  <span className="font-medium text-blue-600">{stats.maleCount}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-slate-600">Female</span>
-                  <span className="font-medium text-pink-600">{stats.femaleCount}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-slate-600">Re-identifications</span>
-                  <span className="font-medium text-amber-600">
-                    {deduplication.stats.reIdentificationCount}
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Detection logs */}
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h3 className="mb-3 font-semibold text-slate-800">Activity Log</h3>
-            <div className="h-64 overflow-y-auto rounded-lg bg-slate-50 p-2 font-mono text-xs">
-              {detectionLogs.length === 0 ? (
-                <p className="text-slate-400">No activity yet...</p>
-              ) : (
-                detectionLogs.map((log, idx) => (
-                  <div key={idx} className="border-b border-slate-200 py-1 last:border-0">
-                    {log}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-600">
+                      Unique Persons
+                    </span>
+                    <span className="font-bold text-emerald-600">
+                      {uniqueCount}
+                    </span>
                   </div>
-                ))
-              )}
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-600">
+                      Total Detections
+                    </span>
+                    <span className="font-medium text-slate-700">
+                      {totalEventCount}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-600">Male</span>
+                    <span className="font-medium text-blue-600">
+                      {stats.maleCount}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-600">Female</span>
+                    <span className="font-medium text-pink-600">
+                      {stats.femaleCount}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-600">
+                      Re-identifications
+                    </span>
+                    <span className="font-medium text-amber-600">
+                      {deduplication.stats.reIdentificationCount}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Detection logs */}
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <h3 className="mb-3 font-semibold text-slate-800">
+                Activity Log
+              </h3>
+              <div className="h-64 overflow-y-auto rounded-lg bg-slate-50 p-2 font-mono text-xs">
+                {detectionLogs.length === 0 ? (
+                  <p className="text-slate-400">No activity yet...</p>
+                ) : (
+                  detectionLogs.map((log, idx) => (
+                    <div
+                      key={idx}
+                      className="border-b border-slate-200 py-1 last:border-0"
+                    >
+                      {log}
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
-          </div>
           </div>
         ) : null}
       </div>
